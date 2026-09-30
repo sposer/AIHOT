@@ -55,38 +55,61 @@ test("through the egress proxy only internal answers refuse a name; literals kee
   }
 });
 
-test("DNS failures and timeouts keep their target, route and duration before any dispatch", async (t) => {
-  const saved = { allowPrivate: config.allowPrivateNetworkFetch, proxy: config.egressProxyUrl };
+test("initial and redirected DNS failures and timeouts preserve HTTP observations and dispatch evidence", async (t) => {
+  const saved = {
+    allowPrivate: config.allowPrivateNetworkFetch, proxy: config.egressProxyUrl,
+    interval: config.outboundHostMinIntervalMs, jitter: config.outboundHostJitterMs,
+  };
   let scenario = "failure";
-  config.allowPrivateNetworkFetch = false;
-  config.egressProxyUrl = null;
+  config.outboundHostMinIntervalMs = 0;
+  config.outboundHostJitterMs = 0;
+  // The first hop is local; re-enable DNS checks before returning its public redirect target.
+  const redirect = http.createServer((_req, res) => {
+    config.allowPrivateNetworkFetch = false;
+    res.writeHead(302, { location: "https://review.example/feed" });
+    res.end();
+  });
+  await new Promise<void>((resolve) => redirect.listen(0, "127.0.0.1", resolve));
+  const redirectUrl = `http://127.0.0.1:${(redirect.address() as { port: number }).port}/`;
   t.mock.method(dns, "lookup", async () => {
     if (scenario === "failure") throw Object.assign(new Error("DNS unavailable"), { code: "EAI_AGAIN" });
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise((resolve) => setTimeout(resolve, 200));
     return [{ address: "8.8.8.8", family: 4 }];
   });
   syncBuiltinESMExports();
   try {
-    for (const mode of ["failure", "timeout"]) {
-      scenario = mode;
-      const trace = createFetchTrace();
-      await assert.rejects(
-        withFetchTrace(trace, () => guardedFetch("https://review.example/feed", { timeoutMs: 30, route: "direct" })),
-        RequestNotSentError,
-      );
-      const summary = summarizeFetchTrace(trace)!;
-      assert.equal(summary.requests, 1);
-      assert.deepEqual(summary.origins.map(({ host, origin, route, proxied }) => ({ host, origin, route, proxied })), [
-        { host: "review.example", origin: "https://review.example", route: "direct", proxied: false },
-      ]);
-      assert.deepEqual([trace[0]!.status, summary.bytes], [null, 0]);
-      assert.equal(summary.errors[mode === "failure" ? "EAI_AGAIN" : "TimeoutError"], 1);
-      if (mode === "timeout") assert.ok(summary.elapsedMs >= 20);
+    for (const route of ["direct", "egress"] as const) {
+      // DNS always fails before a proxy connection; no server is needed at this test-only address.
+      config.egressProxyUrl = route === "egress" ? "http://127.0.0.1:9" : null;
+      for (const redirected of [false, true]) {
+        for (const mode of ["failure", "timeout"]) {
+          scenario = mode;
+          config.allowPrivateNetworkFetch = redirected;
+          const trace = createFetchTrace();
+          await assert.rejects(
+            withFetchTrace(trace, () => guardedFetch(redirected ? redirectUrl : "https://review.example/feed", { timeoutMs: 100, route })),
+            (error: unknown) => error instanceof Error && (error instanceof RequestNotSentError) === !redirected,
+          );
+          const summary = summarizeFetchTrace(trace)!;
+          assert.equal(summary.requests, redirected ? 2 : 1);
+          const event = trace.at(-1)!;
+          assert.deepEqual([event.host, event.origin, event.route, event.proxied], ["review.example", "https://review.example", route, route === "egress"]);
+          assert.deepEqual([event.status, event.bytes], [null, 0]);
+          assert.equal(summary.errors[mode === "failure" ? "EAI_AGAIN" : "TimeoutError"], 1);
+          if (mode === "timeout") assert.ok(event.elapsedMs >= 60);
+          if (redirected) assert.deepEqual([trace[0]!.status, trace[0]!.redirect], [302, true]);
+          t.diagnostic(`${redirected ? "redirect" : "initial"} ${route} DNS ${mode}: trace=${summary.requests}, error=${event.error}, proxied=${event.proxied}, elapsed=${event.elapsedMs}ms`);
+        }
+      }
     }
   } finally {
     config.allowPrivateNetworkFetch = saved.allowPrivate;
     config.egressProxyUrl = saved.proxy;
+    config.outboundHostMinIntervalMs = saved.interval;
+    config.outboundHostJitterMs = saved.jitter;
     t.mock.restoreAll();
     syncBuiltinESMExports();
+    redirect.closeAllConnections();
+    await new Promise<void>((resolve) => redirect.close(() => resolve()));
   }
 });

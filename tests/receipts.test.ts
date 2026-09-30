@@ -122,7 +122,7 @@ test("an unknown outcome is released automatically once, so a lost answer costs 
   assert.equal(sent, 2);
 });
 
-test("a paid request withheld by host cooldown stays retryable and releases its budget reservation", async () => {
+test("a paid request withheld by host cooldown stays retryable and releases its budget reservation", async (t) => {
   const service = `queue-${tag()}`;
   const request = { service, purpose: "invariant_test", subject: service, identity: { service } };
   const local = await stub((_hit, req) => req.url === "/cooldown" ? new Reply(429, {}, { "retry-after": "1" }) : { ok: true });
@@ -141,6 +141,7 @@ test("a paid request withheld by host cooldown stays retryable and releases its 
     assert.equal(attempt!.status, "not_sent");
     const budget = (await listBudgets()).find((row) => row.service === service)!;
     assert.deepEqual([budget.used_hour, budget.used_day], [0, 0]);
+    t.diagnostic(`before retry: paid sends=${local.hits() - 1}, receipt=${receipt!.status}, attempt=${attempt!.status}, budget=${budget.used_hour}/${budget.used_day}`);
 
     await new Promise((resolve) => setTimeout(resolve, 1_000));
     const completed = await paidRequest(request, call);
@@ -148,6 +149,7 @@ test("a paid request withheld by host cooldown stays retryable and releases its 
     assert.equal(local.hits(), 2);
     const attempts = await sql<{ status: string }[]>`SELECT status FROM receipt_attempts WHERE receipt_id = ${receipt!.id} ORDER BY attempt`;
     assert.deepEqual(attempts.map((row) => row.status), ["not_sent", "received"]);
+    t.diagnostic(`after cooldown: paid sends=${local.hits() - 1}, attempts=${attempts.map((row) => row.status).join(",")}, same receipt=${completed.receiptId === receipt!.id}`);
     await assert.rejects(paidRequest({ ...request, identity: { service, another: true } }, call), BudgetExceededError);
     assert.equal(local.hits(), 2, "the sent retry consumes the single available budget slot");
   } finally {

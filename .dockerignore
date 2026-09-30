@@ -8,4 +8,5 @@ apps/web/.react-router
 !.env.example
 .git
 .github
+.ohmo
 *.log

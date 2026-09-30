@@ -1,0 +1,9 @@
+# Source checkout only. Docker Compose loads this file automatically for local builds.
+x-build: &build
+  build: .
+
+services:
+  setup: *build
+  api: *build
+  worker: *build
+  web: *build

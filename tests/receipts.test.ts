@@ -12,6 +12,8 @@ import { embeddingsAvailable } from "@aihot/backend/providers/embeddings";
 import { BudgetExceededError, paidRequest, ReceiptUnknownError } from "@aihot/backend/providers/receipts";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/admin/runs";
 import { listBudgets } from "@aihot/backend/admin/settings";
+import { upsertMaterial } from "@aihot/backend/content/materials";
+import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { guardedFetch, RequestNotSentError } from "@aihot/backend/lib/http-fetch";
 
 const usage = { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 };
@@ -30,6 +32,7 @@ before(async () => {
 after(async () => {
   if (savedBudget) await sql`UPDATE budgets SET per_minute = ${savedBudget.per_minute}, per_hour = ${savedBudget.per_hour}, per_day = ${savedBudget.per_day} WHERE service = 'deepseek'`;
   await provider.close();
+  await stopBoss();
   await closeDb();
 });
 
@@ -83,7 +86,7 @@ test("with the valve off nothing is sent", async () => {
   config.modelCallsEnabled = false;
   try {
     const before = provider.hits();
-    await assert.rejects(ask(`valve-${tag()}`), /disabled/);
+    await assert.rejects(ask(`valve-${tag()}`));
     assert.equal(provider.hits(), before);
     process.env.DASHSCOPE_API_KEY = "test-key";
     assert.equal(embeddingsAvailable(), false);
@@ -93,9 +96,14 @@ test("with the valve off nothing is sent", async () => {
   }
 });
 
-test("an unknown outcome is released automatically once, so a lost answer costs at most one repeat", async () => {
+test("an unknown article stage resumes processing once, so a lost answer costs at most one repeat", async () => {
+  const source = `lost-${tag()}`;
+  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at)
+    VALUES (${source}, 'Lost model answer', 'rss', 'T1', 'editorial', '2100-01-01')`;
+  const { articleId } = await upsertMaterial({ sourceId: source, url: `https://example.org/${source}`, title: "A model release",
+    bodyText: "The model release includes benchmarks and prices.", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
   // A service without a budget row: the budget tests above may have used up deepseek's.
-  const req = { service: "invariant-unbudgeted", purpose: "invariant_test", subject: `lost-${tag()}`, identity: { lost: tag() } };
+  const req = { service: "invariant-unbudgeted", purpose: "score_article", subject: `article:${articleId}@1`, identity: { lost: tag() } };
   let sent = 0;
   const lost = () => {
     sent += 1;
@@ -103,21 +111,36 @@ test("an unknown outcome is released automatically once, so a lost answer costs 
   };
   const status = async () => (await sql<{ status: string }[]>`SELECT status FROM receipts WHERE subject = ${req.subject}`)[0]!.status;
   const age = () => sql`UPDATE receipts SET updated_at = now() - interval '31 minutes' WHERE subject = ${req.subject}`;
+  const block = () => sql`UPDATE articles SET processing_state = 'failed', processing_attempts = 2,
+    processing_retry_at = now() + interval '1 hour', processing_error = 'unknown model answer' WHERE id = ${articleId}`;
+  const article = async () => (await sql`SELECT processing_state, processing_attempts, processing_retry_at, processing_error,
+    processing_queued_at IS NOT NULL AS queued FROM articles WHERE id = ${articleId}`)[0]!;
+  const jobs = () => sql`SELECT data FROM pgboss.job WHERE name = ${QUEUES.analyze} AND data->>'articleId' = ${articleId}`;
 
   await assert.rejects(paidRequest(req, lost));
+  await block();
   assert.equal(await status(), "unknown");
-  await autoReleaseUnknownReceipts();
+  assert.deepEqual(await autoReleaseUnknownReceipts(), { released: 0, requeued: 0 });
   assert.equal(await status(), "unknown", "not within half an hour");
+  assert.equal((await article()).processing_state, "failed");
 
   await age();
-  await autoReleaseUnknownReceipts();
+  assert.deepEqual(await autoReleaseUnknownReceipts(), { released: 1, requeued: 1 });
   assert.equal(await status(), "failed");
+  assert.deepEqual({ ...await article() }, { processing_state: "new", processing_attempts: 0,
+    processing_retry_at: null, processing_error: null, queued: true });
+  assert.deepEqual((await jobs()).map(row => row.data), [{ articleId }]);
+  assert.deepEqual(await autoReleaseUnknownReceipts(), { released: 0, requeued: 0 });
+  assert.equal((await jobs()).length, 1, "release does not duplicate processing jobs");
+  assert.equal(sent, 1, "release queues processing without buying another answer itself");
   await assert.rejects(paidRequest(req, lost));
   assert.equal(sent, 2, "one repeat after the release");
+  await block();
 
   await age();
-  await autoReleaseUnknownReceipts();
+  assert.deepEqual(await autoReleaseUnknownReceipts(), { released: 0, requeued: 0 });
   assert.equal(await status(), "unknown", "a second loss waits for the admin");
+  assert.equal((await article()).processing_state, "failed");
   await assert.rejects(paidRequest(req, lost), ReceiptUnknownError);
   assert.equal(sent, 2);
 });

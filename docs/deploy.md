@@ -17,6 +17,40 @@ docker compose up -d --build
 
 `docker compose` 会起五个容器：`db`（PostgreSQL 17）、`setup`（每次启动先跑数据库迁移和种子数据，然后退出）、`api`、`worker`（抓取、模型处理、定时任务）、`web`（网页）。
 
+### 镜像发布与部署
+
+源码仓持有应用构建，发布方在持有镜像的本机 Docker 上推送仓库，部署主机从仓库拉取运行，不搬运镜像包。`docker-compose.yml` 只定义镜像运行；源码目录的 `docker-compose.override.yml` 自动添加本地构建配置，不交给部署主机。
+
+构建机需要 Node.js 24.11 以上、Git、tar 和 Docker。以下命令构建选定的已提交应用代码，镜像标签含构建时间及提交号；部署文件采用本仓库当前的运行契约：
+
+```bash
+npm run image:build -- --repository registry.example/myhot --ref HEAD
+```
+
+脚本只构建应用镜像。PostgreSQL 和可选 HTTPS 的 Caddy 保持原版，已有的目标平台镜像只重打私有仓库标签；本机缺少对应镜像时才拉取。三个本机镜像及消费文件就绪后交给发布方，构建脚本不推送、不导出镜像归档。`--platform` 默认为 `linux/amd64`，可以指定目标平台。
+
+消费文件位于 `.data/releases/`，包含 `images.env`、`docker-compose.yml`、`.env.example` 和 `deploy/`，不包含本机 `.env`。发布方在同一本机 Docker 上执行三个镜像的 `docker push`，用 `docker buildx imagetools inspect` 核实仓库摘要，将 `images.env` 中全部引用一次性固定为 `tag@sha256:<digest>` 后交付部署主机。发布与部署由消费侧的运维流程管理，源码仓不维护第二套发布所有者。
+
+首次部署把这组消费文件放进独立服务目录，不复制源码构建覆盖文件。先拉取三个私有镜像，再生成本实例的随机密钥和管理员密码，无需在部署主机安装 Node：
+
+```sh
+. ./images.env
+for image in "$APP_IMAGE" "$DB_IMAGE" "$CADDY_IMAGE"; do docker pull "$image"; done
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/settings" -w /settings \
+  "$APP_IMAGE" node /app/scripts/init-env.ts
+```
+
+配置生成的 `.env`：按实际入口设置 `SITE_URL`、`PORT` 和模型的 `LLM_*`。使用其它网关时按其契约设置 `LLM_EXTRA_JSON`，通用配置可用 `{}`。首次检查时关闭采集、模型调用和外部推送，确认运行正常后再启用所需能力。
+
+```sh
+docker compose --env-file .env --env-file images.env config --quiet
+docker compose --env-file .env --env-file images.env up -d --no-build
+docker compose --env-file .env --env-file images.env exec -T web \
+  node scripts/smoke.ts --base http://localhost:3000
+```
+
+后续更新重复构建和发布。部署前保留上一版 `docker-compose.yml`、`images.env` 和 `deploy/`，替换为新版本的对应文件，再执行拉取、启动及验证命令；不覆盖本实例的 `.env`，不删除数据卷。需要回退时恢复上一版这组消费文件并启动，数据库能否回退遵循下面的迁移边界，不把镜像回退视为数据回退。
+
 ### 数据库初始化与迁移
 
 新库由 `database/migrations/0001_core.sql` 直接建立完整应用结构和默认预算。行业主题、示范信源和模型目录由 `scripts/seed.ts` 独立导入；pg-boss 的队列表由它自己在 `pgboss` schema 中管理。

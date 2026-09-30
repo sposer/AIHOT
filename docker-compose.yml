@@ -3,8 +3,7 @@
 name: aihot
 
 x-app: &app
-  build: .
-  image: aihot-app
+  image: ${APP_IMAGE:-aihot-app}
   env_file: .env
   restart: unless-stopped
   environment: &app-env
@@ -21,7 +20,7 @@ x-app: &app
 
 services:
   db:
-    image: postgres:17-alpine
+    image: ${DB_IMAGE:-postgres:17-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_USER: aihot
@@ -73,7 +72,7 @@ services:
         condition: service_started
 
   caddy:
-    image: caddy:2-alpine
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
     profiles: ["https"]
     restart: unless-stopped
     ports:

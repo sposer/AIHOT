@@ -11,6 +11,7 @@
     "node": ">=24.11"
   },
   "scripts": {
+    "image:build": "node scripts/build-images.ts",
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.ts",
     "dev:api": "npm run dev -w @aihot/api",
     "dev:worker": "npm run dev -w @aihot/worker",

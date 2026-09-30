@@ -32,7 +32,7 @@
 - 开发和测试时保持安全阀关闭：`COLLECT_ENABLED`、`MODEL_CALLS_ENABLED`、`FEISHU_*_ENABLED`、`INDEXNOW_SUBMIT_ENABLED`。测试不访问任何外部服务。
 - 信源默认只展示摘要和原文链接（`site_fulltext` 关）；只有来源明确允许时才打开全文。
 - 公开内容匿名，管理员和访客看到的一样；后台只允许管理员。
-- 数据库迁移只做向后兼容的增量，新迁移按编号加在 `database/migrations/` 末尾。
+- 数据库基线和增量迁移的边界遵循 [部署文档](docs/deploy.md#数据库初始化与迁移)，不要增加第二套初始化路径。
 - 不要提交 `.env`、密钥和 `.data/`。
 - 不要使用 AIHOT 的名字和 Logo。
 

@@ -17,6 +17,14 @@ docker compose up -d --build
 
 `docker compose` 会起五个容器：`db`（PostgreSQL 17）、`setup`（每次启动先跑数据库迁移和种子数据，然后退出）、`api`、`worker`（抓取、模型处理、定时任务）、`web`（网页）。
 
+### 数据库初始化与迁移
+
+新库由 `database/migrations/0001_core.sql` 直接建立完整应用结构和默认预算。行业主题、示范信源和模型目录由 `scripts/seed.ts` 独立导入；pg-boss 的队列表由它自己在 `pgboss` schema 中管理。
+
+`scripts/migrate.ts` 按编号顺序执行 SQL，每份迁移和它的 `schema_migrations` 记录在同一事务中提交，已执行的文件不会重跑。`setup` 完成迁移和 seed 后，API 和 worker 才启动。
+
+首次真实部署后固定初始基线，后续数据库变更只在 `database/migrations/` 末尾按编号追加向后兼容的增量迁移。
+
 ### 在中国大陆的服务器上
 
 - 构建时 npm 走国内镜像：`docker compose build --build-arg NPM_REGISTRY=https://registry.npmmirror.com`，然后 `docker compose up -d`。
@@ -50,7 +58,7 @@ git pull
 docker compose up -d --build
 ```
 
-数据库迁移只做向后兼容的增量，更新时自动执行。
+更新时由 `setup` 自动执行[数据库迁移](#数据库初始化与迁移)。
 
 ### 备份
 

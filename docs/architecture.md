@@ -49,7 +49,7 @@ flowchart LR
 | `packages/backend/src/admin/` | 后台接口 |
 | `packages/backend/src/leaderboard/`、`monitor/` | 模型榜、Codex 重置监控（见 [模型榜与 Codex 重置监控](leaderboard.md)） |
 | `apps/web/app/routes/` | 每个页面一个文件，`routes.ts` 是路由表 |
-| `database/migrations/` | 数据库迁移，按编号顺序执行 |
+| `database/migrations/` | 完整初始基线和编号增量迁移，由 `scripts/migrate.ts` 执行 |
 | `scripts/` | 初始化、迁移、种子数据、评测、检查脚本 |
 | `tests/` | 后端测试（需要一个名字以 `_test` 或 `_ci` 结尾的空库） |
 

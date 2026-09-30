@@ -16,6 +16,8 @@ const T = tag();
 const LONG = `${"A card label that swallowed the summary of the article it links to, ".repeat(2)}${T}`;
 let jinaDetailReads = 0;
 let jinaListingReads = 0;
+let activeDetailReads = 0;
+let maxActiveDetailReads = 0;
 const pageReads = new Map<string, number>();
 const ARTICLE_BODY = "A complete article with enough material to preserve the same extraction result without downloading it twice. ".repeat(6);
 const html = (head: string, body: string) => `<html><head>${head}</head><body>${body}</body></html>`;
@@ -24,10 +26,12 @@ const pages: Record<string, (base: string) => string> = {
     `<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>` +
     ["news/a", "business/b"].map((p) => `<item><title>Entry ${p} ${T}</title><link>https://example.org/rules-${T}/${p}</link><pubDate>${new Date().toUTCString()}</pubDate></item>`).join("") +
     `</channel></rss>`,
-  "/list.html": () => html("", `<ul><li><a href="/p/a-${T}">Short clean title ${T}</a><time>2026-09-20</time></li><li><a href="/p/b-${T}">${LONG}</a></li></ul>`),
+  "/list.html": () => html("", `<ul><li><a href="/p/a-${T}">Short clean title ${T}</a><time>2026-09-20</time></li><li><a href="/p/b-${T}">${LONG}</a></li><li><a href="/p/c-${T}">Third title ${T}</a></li></ul>`),
+  "/retry-list.html": () => html("", `<ul><li><a href="/p/retry-${T}">Retry detail ${T}</a></li></ul>`),
   [`/p/a-${T}`]: () =>
     html(`<meta name="description" content="Summary of A"><meta property="article:published_time" content="2026-01-01T00:00:00Z">`, `<h1>Detail heading A</h1><p class="byline"><time datetime="2026-09-21T08:00:00Z">Sep 21</time></p>`),
   [`/p/b-${T}`]: () => html(`<meta name="description" content="Summary of B"><meta property="article:published_time" content="2026-01-01T00:00:00Z">`, `<article><h1>Detail heading B ${T}</h1><p>${ARTICLE_BODY}</p></article>`),
+  [`/p/c-${T}`]: () => html(`<meta name="description" content="Summary of C">`, `<h1>Detail heading C ${T}</h1>`),
   [`/j/1-${T}`]: () => html(`<meta property="article:published_time" content="2026-09-27T01:00:00Z">`, "<p>one</p>"),
   [`/j/2-${T}`]: () => html(`<meta property="article:published_time" content="2026-09-27T02:00:00Z">`, "<p>two</p>"),
 };
@@ -40,16 +44,37 @@ const jina = (base: string, target: string) => {
   else jinaDetailReads += 1;
   return `Title: Page\nURL Source: ${target}\nPublished Time: 2026-09-27T00:00:00Z\nMarkdown Content:\n${md}`;
 };
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const path = req.url ?? "";
   pageReads.set(path, (pageReads.get(path) ?? 0) + 1);
+  if (path === `/p/retry-${T}`) {
+    res.writeHead(429, { "retry-after": "180" });
+    res.end("slow down");
+    return;
+  }
+  if (path.startsWith("/p/")) {
+    activeDetailReads += 1;
+    maxActiveDetailReads = Math.max(maxActiveDetailReads, activeDetailReads);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    activeDetailReads -= 1;
+  }
   const body = path.startsWith("/http") ? jina(base, path.slice(1)) : Object.hasOwn(pages, path) ? pages[path]!(base) : null;
   res.writeHead(body === null ? 404 : 200, { "content-type": path.endsWith(".xml") ? "application/rss+xml" : "text/html; charset=utf-8" });
   res.end(body ?? "");
 });
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+const savedFetchLimits = {
+  detail: config.detailFetchConcurrency,
+  host: config.outboundHostConcurrency,
+  interval: config.outboundHostMinIntervalMs,
+  jitter: config.outboundHostJitterMs,
+};
 config.allowPrivateNetworkFetch = true;
+config.detailFetchConcurrency = 2;
+config.outboundHostConcurrency = 4;
+config.outboundHostMinIntervalMs = 0;
+config.outboundHostJitterMs = 0;
 process.env.JINA_BASE_URL = base;
 process.env.JINA_API_KEY = "test-key";
 
@@ -60,7 +85,14 @@ const SOURCES = {
     kind: "web_list",
     config: {
       url: `${base}/list.html`, parseMode: "html", itemSelector: "li", linkSelector: "a", titleSelector: "a", publishedAtSelector: "time",
-      detail: { maxFetches: 10, titleSelector: "h1", summarySelector: 'meta[name="description"]', publishedAtAuthoritative: true, publishedAtSelector: ".byline time" },
+      detail: { maxFetches: 2, titleSelector: "h1", summarySelector: 'meta[name="description"]', publishedAtAuthoritative: true, publishedAtSelector: ".byline time" },
+    },
+  },
+  detailRetry: {
+    kind: "web_list",
+    config: {
+      url: `${base}/retry-list.html`, itemSelector: "li", linkSelector: "a", titleSelector: "a",
+      detail: { maxFetches: 1, publishedAtSelector: "time" },
     },
   },
   jina: { kind: "web_list", config: { url: `https://r.jina.ai/${base}/jlist-${T}`, parseMode: "markdown", allowUrlPrefixes: [`${base}/j/`], detail: { maxFetches: 5, titleRegex: "^# (.+)$" } } },
@@ -75,8 +107,13 @@ before(async () => {
     await sql`INSERT INTO sources (id, name, kind, config, tier, participation_mode, cursor, next_fetch_at)
               VALUES (${id(name as keyof typeof SOURCES)}, ${name}, ${s.kind}, ${sql.json(s.config)}, 'T1', 'editorial', ${cursor}, '2100-01-01')`;
   }
+  await sql`UPDATE sources SET interval_minutes=1 WHERE id=${id("detailRetry")}`;
 });
 after(async () => {
+  config.detailFetchConcurrency = savedFetchLimits.detail;
+  config.outboundHostConcurrency = savedFetchLimits.host;
+  config.outboundHostMinIntervalMs = savedFetchLimits.interval;
+  config.outboundHostJitterMs = savedFetchLimits.jitter;
   for (const b of savedJina) await sql`UPDATE budgets SET per_minute = ${b.per_minute}, per_hour = ${b.per_hour}, per_day = ${b.per_day} WHERE service = 'jina'`;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await stopBoss();
@@ -105,13 +142,16 @@ test("feed entries outside the source's URL rules are skipped", async () => {
   assert.deepEqual((await articles(id("denied"))).map((a) => a.url), [`https://example.org/rules-${T}/news/a`]);
 });
 
-test("detail rules fill what the listing lacks, and a detail title survives the next listing", async () => {
+test("detail rules fill what the listing lacks, in bounded parallel, and a detail title survives the next listing", async () => {
   for (let run = 0; run < 2; run++) assert.equal((await collectSource(id("detail"), { force: true })).status, "ok");
-  const [a, b] = await articles(id("detail"));
+  const [a, b, c] = await articles(id("detail"));
   assert.deepEqual([a!.title, a!.excerpt, a!.published_at?.toISOString(), a!.revision], [`Short clean title ${T}`, "Summary of A", "2026-09-21T08:00:00.000Z", 1],
     "a clean listing title stays; the byline, not the listing date or page metadata, dates it");
   assert.deepEqual([b!.title, b!.excerpt, b!.published_at, b!.revision], [`Detail heading B ${T}`, "Summary of B", null, 1],
     "a label that swallowed its summary takes the page's heading; without a byline there is no date; the listing does not revise it back");
+  assert.deepEqual([c!.title, c!.excerpt, c!.published_at], [`Third title ${T}`, null, null], "the third needed page stays outside maxFetches=2");
+  assert.equal(pageReads.get(`/p/c-${T}`), undefined);
+  assert.equal(maxActiveDetailReads, 2, "the selected detail pages overlap without exceeding the configured worker count");
 });
 
 test("a Jina listing is read on every fetch, and buys a detail rendering only where a regex rule needs it", async () => {
@@ -136,4 +176,24 @@ test("detail HTML supplies the ordinary extracted body once, while short pages k
   assert.deepEqual([full!.body_html, full!.body_text, full!.body_status], [expected.html, expected.text, "ok"]);
   assert.equal(await extractArticleBody(full!.id, false), "skipped");
   assert.equal(pageReads.get(`/p/b-${T}`), 1, "known listings and extraction never download the same confirmed body again");
+});
+
+
+test("a best-effort detail Retry-After is capped, recorded and can delay the next successful collection", async () => {
+  const savedLimit = config.outboundRetryAfterMaxSeconds;
+  config.outboundRetryAfterMaxSeconds = 120;
+  try {
+    const sourceId = id("detailRetry");
+    const before = Date.now();
+    assert.equal((await collectSource(sourceId, { force: true })).status, "ok");
+    const [saved] = await sql`SELECT next_fetch_at FROM sources WHERE id=${sourceId}`;
+    const delay = new Date(saved!.next_fetch_at).getTime() - before;
+    assert.ok(delay >= 119_000 && delay <= 123_000, `unexpected successful retry delay ${delay}ms`);
+    const [run] = await sql`SELECT detail FROM fetch_runs WHERE source_id=${sourceId} ORDER BY id DESC LIMIT 1`;
+    assert.equal(run!.detail.retryAfterSeconds, 120);
+    assert.equal(run!.detail.http.retryAfterSeconds, 120);
+    assert.equal(run!.detail.http.statuses["429"], 1);
+  } finally {
+    config.outboundRetryAfterMaxSeconds = savedLimit;
+  }
 });

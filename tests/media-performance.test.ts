@@ -11,7 +11,8 @@ const dir = await mkdtemp(path.join(tmpdir(), "aihot-media-test-"));
 process.env.AIHOT_DATA_DIR = dir;
 process.env.ALLOW_PRIVATE_NETWORK_FETCH = "true";
 process.env.MODEL_CALLS_ENABLED = "false";
-const { guardedFetch } = await import("@aihot/backend/lib/http-fetch");
+const { guardedFetch, createFetchTrace, RequestNotSentError, summarizeFetchTrace, withFetchTrace } = await import("@aihot/backend/lib/http-fetch");
+const { config } = await import("@aihot/backend/config");
 const { produceImage } = await import("@aihot/backend/media/images");
 const { renderOg } = await import("../apps/api/src/og/render.ts");
 const { renderPoster } = await import("../apps/api/src/og/poster.ts");
@@ -19,12 +20,22 @@ const { xView } = await import("@aihot/backend/publication/items");
 
 let imageHits = 0;
 let failureHits = 0;
+let crossPortActive = 0;
+let maxCrossPortActive = 0;
 const png = await sharp({ create: { width: 800, height: 400, channels: 3, background: "#176b75" } }).png().toBuffer();
 // Ten noisy 160×120 frames: a GIF that animated WebP clearly beats.
 const frames = await sharp({ create: { width: 160, height: 1200, channels: 3, background: "#808080", noise: { type: "gaussian", mean: 128, sigma: 40 } } }).raw().toBuffer();
 const animatedGif = await sharp(frames, { raw: { width: 160, height: 1200, channels: 3, pageHeight: 120 } }).gif({ loop: 0, delay: Array(10).fill(90) }).toBuffer();
 const server = createServer(async (req, res) => {
   if (req.url === "/anim.gif") { res.writeHead(200, { "content-type": "image/gif" }); return res.end(animatedGif); }
+  if (req.url === "/host-slow") {
+    crossPortActive += 1;
+    maxCrossPortActive = Math.max(maxCrossPortActive, crossPortActive);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    crossPortActive -= 1;
+    res.writeHead(200);
+    return res.end("ok");
+  }
   if (req.url?.startsWith("/redirect/")) {
     await new Promise((resolve) => setTimeout(resolve, 80));
     res.writeHead(302, { location: `/redirect/${Number(req.url.split("/").pop()) + 1}` });
@@ -38,16 +49,177 @@ const server = createServer(async (req, res) => {
 });
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+
+let activeScheduled = 0;
+let maxActiveScheduled = 0;
+let queuedHits = 0;
+const jitterStarts: number[] = [];
+const schedulerServer = createServer(async (req, res) => {
+  if (req.url === "/host-slow") {
+    crossPortActive += 1;
+    maxCrossPortActive = Math.max(maxCrossPortActive, crossPortActive);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    crossPortActive -= 1;
+    res.writeHead(200);
+    return res.end("ok");
+  }
+  if (req.url?.startsWith("/jitter/")) {
+    jitterStarts.push(performance.now());
+    res.writeHead(200);
+    return res.end("ok");
+  }
+  if (req.url?.startsWith("/slow/")) {
+    activeScheduled += 1;
+    maxActiveScheduled = Math.max(maxActiveScheduled, activeScheduled);
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    activeScheduled -= 1;
+    res.writeHead(200);
+    return res.end("ok");
+  }
+  if (req.url === "/hold") {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    res.writeHead(200);
+    return res.end("held");
+  }
+  if (req.url === "/cooldown") {
+    res.writeHead(429, { "retry-after": "10" });
+    return res.end("slow down");
+  }
+  if (req.url === "/queued") queuedHits += 1;
+  res.writeHead(200);
+  res.end("ok");
+});
+await new Promise<void>((resolve) => schedulerServer.listen(0, "127.0.0.1", resolve));
+const schedulerBase = `http://127.0.0.1:${(schedulerServer.address() as { port: number }).port}`;
+
 after(async () => {
   server.closeAllConnections();
+  schedulerServer.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  await new Promise<void>((resolve) => schedulerServer.close(() => resolve()));
   const { closeDb } = await import("@aihot/backend/db");
   await closeDb();
   await rm(dir, { recursive: true, force: true });
 });
 
-test("one timeout covers the complete redirect chain", async () => {
-  await assert.rejects(guardedFetch(`${base}/redirect/0`, { timeoutMs: 140 }), { name: "TimeoutError" });
+test("one timeout covers the complete redirect chain without claiming an already dispatched request was unsent", async () => {
+  await assert.rejects(guardedFetch(`${base}/redirect/0`, { timeoutMs: 140 }), (error: unknown) => {
+    assert.ok(error instanceof Error && error.name === "TimeoutError");
+    assert.ok(!(error instanceof RequestNotSentError));
+    return true;
+  });
+});
+
+test("ordinary HTTP reads are bounded per target host and expose one run-level trace", async () => {
+  const saved = {
+    concurrency: config.outboundHostConcurrency,
+    interval: config.outboundHostMinIntervalMs,
+    jitter: config.outboundHostJitterMs,
+  };
+  config.outboundHostConcurrency = 2;
+  config.outboundHostMinIntervalMs = 0;
+  config.outboundHostJitterMs = 0;
+  try {
+    const trace = createFetchTrace();
+    const responses = await withFetchTrace(trace, () => Promise.all(Array.from({ length: 5 }, (_, i) => guardedFetch(`${schedulerBase}/slow/${i}`))));
+    assert.ok(responses.every((response) => response.status === 200));
+    assert.equal(maxActiveScheduled, 2);
+    const summary = summarizeFetchTrace(trace)!;
+    assert.deepEqual([summary.requests, summary.statuses["200"], summary.errors["TimeoutError"] ?? 0], [5, 5, 0]);
+    assert.deepEqual(summary.origins.map(({ host, origin, route, proxied, requests }) => ({ host, origin, route, proxied, requests })), [
+      { host: "127.0.0.1", origin: schedulerBase, route: "egress", proxied: false, requests: 5 },
+    ]);
+    assert.ok(summary.waitMs > 0);
+    assert.ok(summary.maxMs >= 90);
+    assert.ok(summary.bytes >= 10);
+  } finally {
+    config.outboundHostConcurrency = saved.concurrency;
+    config.outboundHostMinIntervalMs = saved.interval;
+    config.outboundHostJitterMs = saved.jitter;
+  }
+});
+
+test("one target host shares its concurrency limit across ports", async () => {
+  const saved = {
+    concurrency: config.outboundHostConcurrency,
+    interval: config.outboundHostMinIntervalMs,
+    jitter: config.outboundHostJitterMs,
+  };
+  config.outboundHostConcurrency = 1;
+  config.outboundHostMinIntervalMs = 0;
+  config.outboundHostJitterMs = 0;
+  try {
+    crossPortActive = 0;
+    maxCrossPortActive = 0;
+    await Promise.all([guardedFetch(`${base}/host-slow`), guardedFetch(`${schedulerBase}/host-slow`)]);
+    assert.equal(maxCrossPortActive, 1);
+  } finally {
+    config.outboundHostConcurrency = saved.concurrency;
+    config.outboundHostMinIntervalMs = saved.interval;
+    config.outboundHostJitterMs = saved.jitter;
+  }
+});
+
+test("same-host scheduling applies the configured jitter between request starts", async (t) => {
+  const saved = {
+    concurrency: config.outboundHostConcurrency,
+    interval: config.outboundHostMinIntervalMs,
+    jitter: config.outboundHostJitterMs,
+  };
+  config.outboundHostConcurrency = 2;
+  config.outboundHostMinIntervalMs = 0;
+  config.outboundHostJitterMs = 40;
+  t.mock.method(Math, "random", () => 0.5);
+  try {
+    jitterStarts.length = 0;
+    await Promise.all([guardedFetch(`${schedulerBase}/jitter/1`), guardedFetch(`${schedulerBase}/jitter/2`)]);
+    assert.equal(jitterStarts.length, 2);
+    assert.ok(jitterStarts[1]! - jitterStarts[0]! >= 15, "the second request starts after the configured jitter");
+  } finally {
+    config.outboundHostConcurrency = saved.concurrency;
+    config.outboundHostMinIntervalMs = saved.interval;
+    config.outboundHostJitterMs = saved.jitter;
+  }
+});
+
+test("cancelled host waiters leave the queue, and Retry-After cools the host down", async () => {
+  const saved = {
+    concurrency: config.outboundHostConcurrency,
+    interval: config.outboundHostMinIntervalMs,
+    jitter: config.outboundHostJitterMs,
+    retry: config.outboundRetryAfterMaxSeconds,
+  };
+  config.outboundHostConcurrency = 1;
+  config.outboundHostMinIntervalMs = 0;
+  config.outboundHostJitterMs = 0;
+  config.outboundRetryAfterMaxSeconds = 1;
+  try {
+    const held = guardedFetch(`${schedulerBase}/hold`, { timeoutMs: 500 });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const timeoutTrace = createFetchTrace();
+    await assert.rejects(withFetchTrace(timeoutTrace, () => guardedFetch(`${schedulerBase}/queued`, { timeoutMs: 40 })), { name: "TimeoutError" });
+    const timeoutSummary = summarizeFetchTrace(timeoutTrace)!;
+    assert.equal(timeoutSummary.errors.TimeoutError, 1);
+    assert.deepEqual(timeoutSummary.origins.map(({ host, route, proxied }) => ({ host, route, proxied })), [
+      { host: "127.0.0.1", route: "egress", proxied: false },
+    ]);
+    assert.equal((await held).status, 200);
+    assert.equal(queuedHits, 0, "an aborted waiter never reaches the host");
+    assert.equal((await guardedFetch(`${schedulerBase}/queued`)).status, 200, "the aborted waiter does not block the next request");
+
+    const limited = await guardedFetch(`${schedulerBase}/cooldown`);
+    assert.deepEqual([limited.status, limited.retryAfterSeconds], [429, 1]);
+    const before = queuedHits;
+    await assert.rejects(guardedFetch(`${schedulerBase}/queued`, { timeoutMs: 80 }), { name: "TimeoutError" });
+    assert.equal(queuedHits, before, "the cooldown is enforced before sending another request");
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    assert.equal((await guardedFetch(`${schedulerBase}/queued`)).status, 200);
+  } finally {
+    config.outboundHostConcurrency = saved.concurrency;
+    config.outboundHostMinIntervalMs = saved.interval;
+    config.outboundHostJitterMs = saved.jitter;
+    config.outboundRetryAfterMaxSeconds = saved.retry;
+  }
 });
 
 test("simultaneous modes share original bytes, preserve dimensions and use their disk caches", async () => {

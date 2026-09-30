@@ -22,10 +22,25 @@ export type Candidate = Omit<MaterialInput, "sourceId" | "via"> & {
   categories?: string[];
 };
 
+export interface HttpValidator {
+  configHash: string;
+  responseUrl: string;
+  etag: string | null;
+  lastModified: string | null;
+}
+
+export interface SourceRead {
+  candidates: Candidate[];
+  validator: HttpValidator | null;
+  notModified: boolean;
+}
+
 export class FetchError extends Error {
   readonly status: number | null;
-  constructor(message: string, status: number | null = null) {
+  readonly retryAfterSeconds: number | null;
+  constructor(message: string, status: number | null = null, retryAfterSeconds: number | null = null) {
     super(message);
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }

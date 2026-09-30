@@ -1,11 +1,10 @@
 // RSS 2.0 / Atom / RDF feeds.
 import { XMLParser } from "fast-xml-parser";
-import { guardedFetch } from "../lib/http-fetch.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
-import { sha256, stableJson } from "../lib/ids.ts";
-import { FetchError, type Candidate, type SourceRow } from "./types.ts";
+import { conditionalSourceFetch } from "./conditional.ts";
+import { FetchError, type Candidate, type HttpValidator, type SourceRow } from "./types.ts";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -98,42 +97,22 @@ function feedText(bodyHtml: string | null, summaryHtml: string, source: SourceRo
     : { excerpt, bodyHtml: null, bodyText: null, bodyStatus: "pending" };
 }
 
-interface RssValidator {
-  configHash: string;
-  responseUrl: string;
-  etag: string | null;
-  lastModified: string | null;
-}
-
 export interface RssRead {
   candidates: Candidate[];
-  validator: RssValidator;
+  validator: HttpValidator;
   notModified: boolean;
 }
 
 export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}): Promise<RssRead> {
   const url = String(source.config.feedUrl ?? "");
   if (!url) throw new FetchError("feedUrl missing");
-  // Config changes can alter parsing/filtering even when the upstream bytes did not change.
-  const configHash = sha256(stableJson(source.config));
-  const previous = !opts.force && source.cursor?.rss?.configHash === configHash ? source.cursor.rss as RssValidator : null;
-  const headers: Record<string, string> = { accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8" };
-  if (previous?.etag) headers["if-none-match"] = previous.etag;
-  if (previous?.lastModified) headers["if-modified-since"] = previous.lastModified;
-  let res = await guardedFetch(url, { headers, timeoutMs: 25_000 });
-  // A redirect may have changed destinations, whose ETag namespace is unrelated to the old one.
-  if (res.status === 304 && previous && res.url !== previous.responseUrl) {
-    res = await guardedFetch(url, { headers: { accept: headers.accept! }, timeoutMs: 25_000 });
-  }
-  const validator: RssValidator = {
-    configHash, responseUrl: res.url,
-    etag: res.headers.get("etag") ?? (res.status === 304 ? previous?.etag ?? null : null),
-    lastModified: res.headers.get("last-modified") ?? (res.status === 304 ? previous?.lastModified ?? null : null),
-  };
-  if (res.status === 304 && previous && (previous.etag || previous.lastModified) && res.url === previous.responseUrl) {
-    return { candidates: [], validator, notModified: true };
-  }
-  if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status);
+  const read = await conditionalSourceFetch(source, "rss", url, {
+    headers: { accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8" },
+    timeoutMs: 25_000,
+  }, opts.force);
+  const res = read.response;
+  if (read.notModified) return { candidates: [], validator: read.validator, notModified: true };
+  if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status, res.retryAfterSeconds);
   let doc: Record<string, any>;
   try {
     doc = parser.parse(res.text());
@@ -174,7 +153,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         raw: { guid: text(it.guid) || null },
       });
     }
-    return { candidates: out, validator, notModified: false };
+    return { candidates: out, validator: read.validator, notModified: false };
   }
 
   const feed = doc.feed;
@@ -200,7 +179,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         raw: { id: text(e.id) || null },
       });
     }
-    return { candidates: out, validator, notModified: false };
+    return { candidates: out, validator: read.validator, notModified: false };
   }
   throw new FetchError("not an RSS/Atom document");
 }

@@ -2,9 +2,12 @@
 // to one is refused at connect time too (DNS rebinding after the URL check).
 import assert from "node:assert/strict";
 import http from "node:http";
+import dns from "node:dns/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { after, test } from "node:test";
 import { Agent, fetch as undiciFetch } from "undici";
-import { guardedFetch } from "@aihot/backend/lib/http-fetch";
+import { config } from "@aihot/backend/config";
+import { createFetchTrace, guardedFetch, RequestNotSentError, summarizeFetchTrace, withFetchTrace } from "@aihot/backend/lib/http-fetch";
 import { assertPublicUrl, guardedLookup, isBlockedAddress, isInternalAddress } from "@aihot/backend/lib/url";
 
 const server = http.createServer((_req, res) => res.end("internal"));
@@ -49,5 +52,41 @@ test("through the egress proxy only internal answers refuse a name; literals kee
   assert.deepEqual(unroutable.filter((a) => isInternalAddress(a)), [], "wrongly internal");
   for (const url of ["http://localhost/", "http://[::ffff:127.0.0.1]/", "http://[2001:db8::1]/", "http://10.0.0.1/"]) {
     await assert.rejects(assertPublicUrl(url, false, true), Error, url);
+  }
+});
+
+test("DNS failures and timeouts keep their target, route and duration before any dispatch", async (t) => {
+  const saved = { allowPrivate: config.allowPrivateNetworkFetch, proxy: config.egressProxyUrl };
+  let scenario = "failure";
+  config.allowPrivateNetworkFetch = false;
+  config.egressProxyUrl = null;
+  t.mock.method(dns, "lookup", async () => {
+    if (scenario === "failure") throw Object.assign(new Error("DNS unavailable"), { code: "EAI_AGAIN" });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    return [{ address: "8.8.8.8", family: 4 }];
+  });
+  syncBuiltinESMExports();
+  try {
+    for (const mode of ["failure", "timeout"]) {
+      scenario = mode;
+      const trace = createFetchTrace();
+      await assert.rejects(
+        withFetchTrace(trace, () => guardedFetch("https://review.example/feed", { timeoutMs: 30, route: "direct" })),
+        RequestNotSentError,
+      );
+      const summary = summarizeFetchTrace(trace)!;
+      assert.equal(summary.requests, 1);
+      assert.deepEqual(summary.origins.map(({ host, origin, route, proxied }) => ({ host, origin, route, proxied })), [
+        { host: "review.example", origin: "https://review.example", route: "direct", proxied: false },
+      ]);
+      assert.deepEqual([trace[0]!.status, summary.bytes], [null, 0]);
+      assert.equal(summary.errors[mode === "failure" ? "EAI_AGAIN" : "TimeoutError"], 1);
+      if (mode === "timeout") assert.ok(summary.elapsedMs >= 20);
+    }
+  } finally {
+    config.allowPrivateNetworkFetch = saved.allowPrivate;
+    config.egressProxyUrl = saved.proxy;
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
   }
 });

@@ -5,7 +5,8 @@ import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { readable, type ExtractedBody } from "../content/extract.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { jinaRead } from "../providers/jina.ts";
-import { FetchError, type Candidate, type SourceRow } from "./types.ts";
+import { conditionalSourceFetch } from "./conditional.ts";
+import { FetchError, type Candidate, type HttpValidator, type SourceRead, type SourceRow } from "./types.ts";
 
 const JINA_PREFIX = "https://r.jina.ai/";
 
@@ -95,17 +96,28 @@ function absolute(href: string | undefined, base: string): string | null {
   }
 }
 
-async function fetchListingText(source: SourceRow): Promise<{ text: string; viaJina: boolean; base: string }> {
+async function fetchListingText(source: SourceRow, opts: { force?: boolean } = {}): Promise<{
+  text: string | null;
+  viaJina: boolean;
+  base: string;
+  validator: HttpValidator | null;
+  notModified: boolean;
+}> {
   const url = String(source.config.url ?? "");
   if (!url) throw new FetchError("url missing");
   if (url.startsWith(JINA_PREFIX)) {
     const target = url.slice(JINA_PREFIX.length);
     const page = await jinaRead(target, { purpose: "source_listing", subject: `source:${source.id}`, cacheToleranceSeconds: source.config.cacheToleranceSeconds, perRead: true });
-    return { text: page.markdown, viaJina: true, base: source.config.baseUrl ?? target };
+    return { text: page.markdown, viaJina: true, base: source.config.baseUrl ?? target, validator: null, notModified: false };
   }
-  const res = await guardedFetch(url, { headers: { accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8" }, timeoutMs: 25_000 });
-  if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status);
-  return { text: res.text(), viaJina: false, base: source.config.baseUrl ?? url };
+  const read = await conditionalSourceFetch(source, "web", url, {
+    headers: { accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8" },
+    timeoutMs: 25_000,
+  }, opts.force);
+  if (read.notModified) return { text: null, viaJina: false, base: source.config.baseUrl ?? url, validator: read.validator, notModified: true };
+  const res = read.response;
+  if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status, res.retryAfterSeconds);
+  return { text: res.text(), viaJina: false, base: source.config.baseUrl ?? url, validator: read.validator, notModified: false };
 }
 
 export function fromMarkdown(md: string, base: string, source: SourceRow): Candidate[] {
@@ -218,7 +230,7 @@ function fromDocusaurusChangelog(html: string, base: string, source: SourceRow):
 
 async function fetchScript(url: string): Promise<string> {
   const res = await guardedFetch(url, { timeoutMs: 25_000 });
-  if (res.status !== 200) throw new FetchError(`HTTP ${res.status} for ${url}`, res.status);
+  if (res.status !== 200) throw new FetchError(`HTTP ${res.status} for ${url}`, res.status, res.retryAfterSeconds);
   return res.text();
 }
 
@@ -286,16 +298,22 @@ async function fromMimoHome(html: string, base: string, source: SourceRow): Prom
   throw new FetchError("mimo_home: no Blog list in the homepage's chunks");
 }
 
+export async function readWebList(source: SourceRow, opts: { force?: boolean } = {}): Promise<SourceRead> {
+  const read = await fetchListingText(source, opts);
+  if (read.notModified) return { candidates: [], validator: read.validator, notModified: true };
+  const mode = source.config.adapter === "mimo_home" ? "mimo_home" : source.config.parseMode ?? (read.viaJina ? "markdown" : "html");
+  let candidates: Candidate[];
+  if (mode === "mimo_home") candidates = await fromMimoHome(read.text!, read.base, source);
+  else if (mode === "markdown") candidates = fromMarkdown(read.text!, read.base, source);
+  else if (mode === "docusaurus_changelog") candidates = fromDocusaurusChangelog(read.text!, read.base, source);
+  else candidates = fromHtml(read.text!, read.base, source);
+  if (candidates.length === 0) throw new FetchError(`no items matched (${mode})`);
+  return { candidates, validator: read.validator, notModified: false };
+}
+
+/** Full read for previews and parser tests; collection uses readWebList so it can persist validators. */
 export async function fetchWebList(source: SourceRow): Promise<Candidate[]> {
-  const { text, viaJina, base } = await fetchListingText(source);
-  const mode = source.config.adapter === "mimo_home" ? "mimo_home" : source.config.parseMode ?? (viaJina ? "markdown" : "html");
-  let out: Candidate[];
-  if (mode === "mimo_home") out = await fromMimoHome(text, base, source);
-  else if (mode === "markdown") out = fromMarkdown(text, base, source);
-  else if (mode === "docusaurus_changelog") out = fromDocusaurusChangelog(text, base, source);
-  else out = fromHtml(text, base, source);
-  if (out.length === 0) throw new FetchError(`no items matched (${mode})`);
-  return out;
+  return (await readWebList(source, { force: true })).candidates;
 }
 
 export interface DetailNeed {

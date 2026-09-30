@@ -27,6 +27,7 @@ const tweet = (p: { id: bigint; handle: string }) => ({
 });
 
 let failNext = false;
+let failureRetryAfter: string | null = null;
 let failPage2 = 0;
 const queries: string[] = [];
 const socialdata = await stub((_hit, req) => {
@@ -34,7 +35,9 @@ const socialdata = await stub((_hit, req) => {
   queries.push(q);
   if (failNext) {
     failNext = false;
-    return new Reply(500, { error: "down" });
+    const headers: Record<string, string> = failureRetryAfter ? { "retry-after": failureRetryAfter } : {};
+    failureRetryAfter = null;
+    return new Reply(500, { error: "down" }, headers);
   }
   const handles = new Set([...q.matchAll(/from:(\w+)/g)].map((m) => m[1]!.toLowerCase()));
   const since = BigInt(/since_id:(\d+)/.exec(q)?.[1] ?? "0");
@@ -135,16 +138,33 @@ test("a quiet account's old newest post does not drag the shard's search back: i
   assert.equal(since, expected > WATERMARK - 3n ? expected : WATERMARK - 3n, "bounded by the last checks, not by the quiet account's post");
 });
 
-test("a failed search fails every account of the shard and moves no watermark", async () => {
+test("a failed search moves no watermark and lets a longer provider Retry-After extend the existing backoff", async () => {
   await sql`UPDATE sources SET cursor = (cursor - 'lastOkAt') || ${sql.json({ lastTweetId: String(WATERMARK - 2n) })} WHERE id IN ${sql(IDS)}`;
   const watermark = String(WATERMARK - 2n);
-  failNext = true;
-  const res = await collectXShard(`editorial:test-${T}`, IDS);
-  assert.equal(res.status, "failed");
-  for (const id of IDS) assert.equal((await cursorOf(id)).lastTweetId, watermark);
-  const failed = await sql<{ n: number }[]>`
-    SELECT count(*)::int AS n FROM (SELECT DISTINCT ON (source_id) status FROM fetch_runs WHERE source_id IN ${sql(IDS)} ORDER BY source_id, id DESC) r WHERE status = 'failed'`;
-  assert.equal(failed[0]!.n, 3);
+  const savedLimit = config.outboundRetryAfterMaxSeconds;
+  config.outboundRetryAfterMaxSeconds = 7_200;
+  try {
+    failNext = true;
+    failureRetryAfter = "7200";
+    const before = Date.now();
+    const res = await collectXShard(`editorial:test-${T}`, IDS);
+    assert.equal(res.status, "failed");
+    for (const id of IDS) assert.equal((await cursorOf(id)).lastTweetId, watermark);
+    const failed = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM (SELECT DISTINCT ON (source_id) status FROM fetch_runs WHERE source_id IN ${sql(IDS)} ORDER BY source_id, id DESC) r WHERE status = 'failed'`;
+    assert.equal(failed[0]!.n, 3);
+    const [scheduled] = await sql<{ next_fetch_at: Date }[]>`SELECT next_fetch_at FROM sources WHERE id=${IDS[0]!}`;
+    const delay = scheduled!.next_fetch_at.getTime() - before;
+    assert.ok(delay >= 7_198_000 && delay <= 7_205_000, `unexpected provider retry delay ${delay}ms`);
+    const [run] = await sql`SELECT detail FROM fetch_runs WHERE source_id=${IDS[0]!} ORDER BY id DESC LIMIT 1`;
+    assert.equal(run!.detail.retryAfterSeconds, 7_200);
+    assert.equal(run!.detail.http.retryAfterSeconds, 7_200);
+    const target = run!.detail.http.origins.find((entry: { origin: string }) => entry.origin === socialdata.url);
+    assert.ok(target);
+    assert.deepEqual({ host: target.host, route: target.route, proxied: target.proxied }, { host: "127.0.0.1", route: "direct", proxied: false });
+  } finally {
+    config.outboundRetryAfterMaxSeconds = savedLimit;
+  }
 });
 
 test("due accounts are scheduled by shard, not one by one", async () => {

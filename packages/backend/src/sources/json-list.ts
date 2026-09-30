@@ -2,7 +2,8 @@
 import { credential } from "../config.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
-import { FetchError, type Candidate, type SourceRow } from "./types.ts";
+import { conditionalSourceFetch } from "./conditional.ts";
+import { FetchError, type Candidate, type SourceRead, type SourceRow } from "./types.ts";
 
 export function getPath(obj: unknown, path: string): unknown {
   if (!path) return obj;
@@ -128,21 +129,26 @@ function embeddedJson(html: string, source: SourceRow): unknown {
   throw new FetchError(`embedded key ${key} not found`);
 }
 
-export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
+export async function readJsonList(source: SourceRow, opts: { force?: boolean } = {}): Promise<SourceRead> {
   const c = source.config;
   const url = String(c.url ?? "");
+  const method = String(c.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = { accept: "application/json, text/html;q=0.9", ...(c.headers ?? {}) };
   if (/^https:\/\/api\.github\.com\//.test(url)) {
     const token = credential("collectors", "GITHUB_TOKEN");
     if (token) headers.authorization = `Bearer ${token}`;
   }
-  const res = await guardedFetch(url, {
-    method: c.method ?? "GET",
+  const request = {
+    method,
     headers: c.bodyJson ? { ...headers, "content-type": "application/json" } : headers,
     body: c.bodyJson ? JSON.stringify(c.bodyJson) : undefined,
     timeoutMs: 25_000,
-  });
-  if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status);
+  };
+  const conditional = method === "GET" && !c.bodyJson;
+  const read = conditional ? await conditionalSourceFetch(source, "json", url, request, opts.force) : null;
+  const res = read?.response ?? await guardedFetch(url, request);
+  if (read?.notModified) return { candidates: [], validator: read.validator, notModified: true };
+  if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status, res.retryAfterSeconds);
   let data: unknown;
   if (c.mode === "html_json_key" || c.mode === "html_window_var") data = embeddedJson(res.text(), source);
   else {
@@ -180,5 +186,10 @@ export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
     });
   }
   if (items.length > 0 && out.length === 0 && !c.requireBoolean && !c.minNumeric) throw new FetchError("no items mapped (check title/url paths)");
-  return out;
+  return { candidates: out, validator: read?.validator ?? null, notModified: false };
+}
+
+/** Full read for previews and parser tests; collection uses readJsonList so it can persist validators. */
+export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
+  return (await readJsonList(source, { force: true })).candidates;
 }

@@ -1,7 +1,7 @@
 // Paid requests: an answer already received is reused, every request actually sent counts against the
 // budget (retries of one logical request included), a lost answer is bought again at most once, and the
 // valve stops calls before they are sent.
-import { stub, tag } from "./setup.ts";
+import { Reply, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { z } from "zod";
@@ -11,6 +11,8 @@ import { chatJson, ModelOutputError } from "@aihot/backend/providers/llm";
 import { embeddingsAvailable } from "@aihot/backend/providers/embeddings";
 import { BudgetExceededError, paidRequest, ReceiptUnknownError } from "@aihot/backend/providers/receipts";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/admin/runs";
+import { listBudgets } from "@aihot/backend/admin/settings";
+import { guardedFetch, RequestNotSentError } from "@aihot/backend/lib/http-fetch";
 
 const usage = { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 };
 let answer: (hit: number) => string = () => '{"ok":true}';
@@ -118,4 +120,40 @@ test("an unknown outcome is released automatically once, so a lost answer costs 
   assert.equal(await status(), "unknown", "a second loss waits for the admin");
   await assert.rejects(paidRequest(req, lost), ReceiptUnknownError);
   assert.equal(sent, 2);
+});
+
+test("a paid request withheld by host cooldown stays retryable and releases its budget reservation", async () => {
+  const service = `queue-${tag()}`;
+  const request = { service, purpose: "invariant_test", subject: service, identity: { service } };
+  const local = await stub((_hit, req) => req.url === "/cooldown" ? new Reply(429, {}, { "retry-after": "1" }) : { ok: true });
+  const saved = { allowPrivate: config.allowPrivateNetworkFetch, retry: config.outboundRetryAfterMaxSeconds };
+  config.allowPrivateNetworkFetch = true;
+  config.outboundRetryAfterMaxSeconds = 1;
+  try {
+    await sql`INSERT INTO budgets (service, per_minute, per_hour, per_day) VALUES (${service}, 1, 1, 1)`;
+    await guardedFetch(`${local.url}/cooldown`, { route: "direct" });
+    const call = async () => ({ response: JSON.parse((await guardedFetch(`${local.url}/paid`, { timeoutMs: 80, route: "direct" })).text()) });
+    await assert.rejects(paidRequest(request, call), RequestNotSentError);
+    assert.equal(local.hits(), 1, "only the request establishing cooldown was sent");
+    const [receipt] = await sql<{ id: number; status: string }[]>`SELECT id, status FROM receipts WHERE subject = ${service}`;
+    assert.equal(receipt!.status, "failed");
+    const [attempt] = await sql<{ status: string }[]>`SELECT status FROM receipt_attempts WHERE receipt_id = ${receipt!.id}`;
+    assert.equal(attempt!.status, "not_sent");
+    const budget = (await listBudgets()).find((row) => row.service === service)!;
+    assert.deepEqual([budget.used_hour, budget.used_day], [0, 0]);
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    const completed = await paidRequest(request, call);
+    assert.equal(completed.receiptId, receipt!.id, "the logical request retries without an unknown-receipt release");
+    assert.equal(local.hits(), 2);
+    const attempts = await sql<{ status: string }[]>`SELECT status FROM receipt_attempts WHERE receipt_id = ${receipt!.id} ORDER BY attempt`;
+    assert.deepEqual(attempts.map((row) => row.status), ["not_sent", "received"]);
+    await assert.rejects(paidRequest({ ...request, identity: { service, another: true } }, call), BudgetExceededError);
+    assert.equal(local.hits(), 2, "the sent retry consumes the single available budget slot");
+  } finally {
+    config.allowPrivateNetworkFetch = saved.allowPrivate;
+    config.outboundRetryAfterMaxSeconds = saved.retry;
+    await local.close();
+    await sql`DELETE FROM budgets WHERE service = ${service}`;
+  }
 });

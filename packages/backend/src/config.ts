@@ -26,6 +26,12 @@ function int(name: string, fallback: number): number {
   return parsed;
 }
 
+function boundedInt(name: string, fallback: number, min: number, max: number): number {
+  const value = int(name, fallback);
+  if (value < min || value > max) throw new Error(`Environment variable ${name} must be between ${min} and ${max}`);
+  return value;
+}
+
 function bool(name: string, fallback: boolean): boolean {
   const value = env[name];
   if (value === undefined || value === "") return fallback;
@@ -42,6 +48,11 @@ export const config = {
   siteUrl: str("SITE_URL", SITE.defaultUrl).replace(/\/+$/, ""),
   selectedVisibleAfterSeconds: int("SELECTED_VISIBLE_AFTER_SECONDS", 180),
   egressProxyUrl: env.EGRESS_PROXY_URL || null,
+  outboundHostConcurrency: boundedInt("OUTBOUND_HOST_CONCURRENCY", 4, 1, 32),
+  outboundHostMinIntervalMs: boundedInt("OUTBOUND_HOST_MIN_INTERVAL_MS", 50, 0, 60_000),
+  outboundHostJitterMs: boundedInt("OUTBOUND_HOST_JITTER_MS", 100, 0, 60_000),
+  outboundRetryAfterMaxSeconds: boundedInt("OUTBOUND_RETRY_AFTER_MAX_SECONDS", 300, 0, 86_400),
+  detailFetchConcurrency: boundedInt("DETAIL_FETCH_CONCURRENCY", 2, 1, 16),
   allowPrivateNetworkFetch: bool("ALLOW_PRIVATE_NETWORK_FETCH", false),
   feishuContentPushEnabled: bool("FEISHU_CONTENT_PUSH_ENABLED", false),
   indexNowSubmitEnabled: bool("INDEXNOW_SUBMIT_ENABLED", false),

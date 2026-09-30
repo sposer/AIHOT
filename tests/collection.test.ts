@@ -13,6 +13,8 @@ import { checkMpAccount } from "@aihot/backend/sources/mp";
 const T = tag();
 const X_SOURCE = `test-x-${T}`;
 const MP_SOURCE = `test-mp-${T}`;
+const MP_FAILURE_SOURCE = `test-mp-failure-${T}`;
+const MP_FAILURE_GHID = `gh_failure_${T}`;
 
 // SocialData: 450 posts newer than the watermark, newest first, 20 a page; `cursor` is the page number.
 const BASE = BigInt(Date.now()) * 1000n;
@@ -35,6 +37,8 @@ const MP_URL = `https://mp.weixin.qq.com/s/test-${T}`;
 let bodyCalls = 0;
 const dajiala = await stub((_hit, req) => {
   if (req.url.startsWith("/fbmain/monitor/v3/post_history")) {
+    const { ghid } = JSON.parse(req.body) as { ghid: string };
+    if (ghid === MP_FAILURE_GHID) return new Reply(503, { error: "busy" });
     return { code: 0, data: [{ position: 1, url: MP_URL, title: `公众号文章 ${T}`, post_time: Math.floor(Date.now() / 1000) - 3600, digest: "摘要", sn: `sn-${T}` }], remain_money: 100 };
   }
   bodyCalls += 1;
@@ -56,6 +60,8 @@ before(async () => {
             VALUES (${X_SOURCE}, 'Test X', 'x_search', ${sql.json({ query: `from:acct${T}` })}, 'T1', 'editorial',
                     ${sql.json({ initializedAt: new Date().toISOString(), lastTweetId: String(WATERMARK) })}, '2100-01-01'),
                    (${MP_SOURCE}, 'Test mp', 'mp_account', ${sql.json({ ghid: `gh_${T}` })}, 'T1', 'editorial',
+                    ${sql.json({ lastCheckedAt: new Date().toISOString() })}, '2100-01-01'),
+                   (${MP_FAILURE_SOURCE}, 'Test mp failure', 'mp_account', ${sql.json({ ghid: MP_FAILURE_GHID })}, 'T1', 'editorial',
                     ${sql.json({ lastCheckedAt: new Date().toISOString() })}, '2100-01-01')`;
 });
 after(async () => {
@@ -65,6 +71,25 @@ after(async () => {
   await stopBoss();
   await closeDb();
 });
+
+function assertMpHttpObservation(detail: Record<string, unknown>, statuses: string[]) {
+  const http = detail.http as {
+    bytes: number;
+    elapsedMs: number;
+    maxMs: number;
+    statuses: Record<string, number>;
+    origins: Array<{ host: string; origin: string; route: string; proxied: boolean; bytes: number; maxMs: number }>;
+  };
+  assert.ok(http.bytes > 0);
+  assert.ok(http.elapsedMs >= 0);
+  assert.ok(http.maxMs >= 0);
+  for (const status of statuses) assert.ok(http.statuses[status] >= 1);
+  const target = http.origins.find((entry) => entry.origin === dajiala.url);
+  assert.ok(target);
+  assert.deepEqual({ host: target.host, route: target.route, proxied: target.proxied }, { host: "127.0.0.1", route: "direct", proxied: false });
+  assert.ok(target.bytes > 0);
+  assert.ok(target.maxMs >= 0);
+}
 
 test("an X search longer than one run is read to the old watermark over the next runs", async () => {
   const stored = async () => Number((await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM articles WHERE source_id = ${X_SOURCE}`)[0]!.n);
@@ -92,10 +117,15 @@ test("a WeChat body that failed for a passing reason is fetched on the next chec
 
   const first = await checkMpAccount(MP_SOURCE, "manual");
   assert.equal(first.status, "ok");
-  assert.deepEqual({ ...(await article()) }, { body_status: "none", revision: 1, retry: { attempts: 1, error: "dajiala HTTP 503" } });
+  const pendingBody = await article();
+  assert.deepEqual([pendingBody.body_status, pendingBody.revision, pendingBody.retry?.attempts], ["none", 1, 1]);
+  const [firstRun] = await sql<{ detail: Record<string, unknown> }[]>`SELECT detail FROM fetch_runs WHERE source_id = ${MP_SOURCE} ORDER BY id DESC LIMIT 1`;
+  assert.equal(firstRun!.detail.reason, "manual");
+  assertMpHttpObservation(firstRun!.detail, ["200", "503"]);
 
   const second = await checkMpAccount(MP_SOURCE, "manual");
   assert.equal(second.status, "ok");
+  assert.equal(second.reused, true);
   assert.equal(bodyCalls, 2, "the body is asked for once more");
   const now = await article();
   assert.deepEqual([now.body_status, now.revision, now.retry], ["ok", 2, null], "the body arrives as a new revision and retrying stops");
@@ -104,4 +134,13 @@ test("a WeChat body that failed for a passing reason is fetched on the next chec
 
   await checkMpAccount(MP_SOURCE, "manual");
   assert.equal(bodyCalls, 2, "a body already stored is not bought again");
+});
+
+test("a failed WeChat history request persists its HTTP observations", async () => {
+  await assert.rejects(checkMpAccount(MP_FAILURE_SOURCE, "manual"));
+  const [run] = await sql<{ status: string; detail: Record<string, unknown> }[]>`
+    SELECT status, detail FROM fetch_runs WHERE source_id = ${MP_FAILURE_SOURCE} ORDER BY id DESC LIMIT 1`;
+  assert.equal(run!.status, "failed");
+  assert.equal(run!.detail.reason, "manual");
+  assertMpHttpObservation(run!.detail, ["503"]);
 });

@@ -34,11 +34,36 @@ interface Source {
   updated_at: string;
 }
 
-/** X runs: pages read, and older stretches still to read (backlog) or given up (dropped). */
+/** X progress plus process-local HTTP observations recorded for every ordinary collection run. */
 interface RunDetail {
   pages?: number;
   backlog?: number;
   dropped?: number;
+  notModified?: boolean;
+  retryAfterSeconds?: number;
+  http?: {
+    requests: number;
+    proxied: number;
+    bytes: number;
+    waitMs: number;
+    elapsedMs: number;
+    maxMs: number;
+    statuses: Record<string, number>;
+    errors: Record<string, number>;
+    retryAfterSeconds: number | null;
+    origins?: Array<{
+      host: string;
+      origin: string;
+      route: "egress" | "direct";
+      proxied: boolean;
+      requests: number;
+      bytes: number;
+      elapsedMs: number;
+      maxMs: number;
+      statuses: Record<string, number>;
+      errors: Record<string, number>;
+    }>;
+  };
 }
 
 interface Detail {
@@ -293,12 +318,29 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
                   render: (r) => (
                     <span className="inline-flex gap-1">
                       <Badge tone={r.status === "ok" ? "ok" : r.status === "failed" ? "bad" : "muted"} title={r.error ?? undefined}>{r.status}</Badge>
+                      {r.detail?.notModified && <Badge tone="muted" title="远端内容没有变化，本轮未重复解析">304</Badge>}
+                      {!!r.detail?.retryAfterSeconds && <Badge tone="warn" title="远端或预算要求的等待时间">退避 {r.detail.retryAfterSeconds}s</Badge>}
                       {!!r.detail?.dropped && <Badge tone="bad" title="有一段更早的帖子没能读完，其中的内容可能漏采">可能漏采</Badge>}
                       {!r.detail?.dropped && !!r.detail?.backlog && <Badge tone="warn" title="帖子多于一轮能读的页数，余下的在后面几轮接着读">续读 {r.detail.backlog} 段</Badge>}
                     </span>
                   ),
                 },
                 { key: "n", label: "发现/新增", align: "right", render: (r) => `${r.found_count ?? "—"}/${r.new_count ?? "—"}` },
+                {
+                  key: "http",
+                  label: "HTTP",
+                  align: "right",
+                  render: (r) => {
+                    const h = r.detail?.http;
+                    if (!h) return "—";
+                    const statuses = Object.entries(h.statuses).map(([status, count]) => `${status}×${count}`).join(", ");
+                    const errors = Object.entries(h.errors).map(([name, count]) => `${name}×${count}`).join(", ");
+                    const targets = (h.origins ?? []).map((o) => `${o.host} · ${o.route}${o.proxied ? " · 固定代理" : ""} · ${o.requests} 次 · ${num(o.bytes)} B · 最慢 ${o.maxMs}ms`);
+                    const primary = h.origins?.[0];
+                    const title = [statuses, errors, `排队 ${h.waitMs}ms`, `最慢 ${h.maxMs}ms`, h.proxied ? `代理 ${h.proxied}` : "", ...targets].filter(Boolean).join(" · ");
+                    return <span className="num whitespace-nowrap" title={title}>{h.requests} 次 / {num(h.bytes)} B{primary ? ` · ${primary.host} · ${primary.route}` : ""}</span>;
+                  },
+                },
                 { key: "ms", label: "耗时", align: "right", render: (r) => duration(r.started_at, r.finished_at) },
               ]}
             />

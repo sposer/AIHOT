@@ -1,14 +1,16 @@
 // Collection run for one source: fetch listing → filter → store material → enqueue processing.
 // A failed fetch never advances the success cursor; the source's health reflects consecutive failures.
+import { config } from "../config.ts";
 import { sql } from "../db.ts";
 import { identityKeyFor, upsertMaterial } from "../content/materials.ts";
+import { createFetchTrace, summarizeFetchTrace, withFetchTrace, type FetchTrace } from "../lib/http-fetch.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { BudgetExceededError } from "../providers/receipts.ts";
 import { fetchRss } from "./rss.ts";
-import { allowed, fetchDetail, fetchWebList, type DetailNeed } from "./web-list.ts";
+import { allowed, fetchDetail, readWebList, type DetailNeed } from "./web-list.ts";
 import { unsupportedConfig } from "./config-keys.ts";
-import { fetchJsonList } from "./json-list.ts";
+import { readJsonList } from "./json-list.ts";
 import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, SHARDABLE_SQL, tweetToCandidate, type XBacklog, type XRead } from "./x.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 
@@ -22,6 +24,43 @@ export interface CollectResult {
 }
 
 const MAX_ITEMS_PER_RUN = 60;
+
+// decision: share one source-run projection; not assemble summaries in each collector because HTTP
+// and Retry-After fields must keep the same meaning across source kinds.
+export function observedRunDetail(detail: Record<string, unknown> | null, trace: FetchTrace): Record<string, unknown> | null {
+  const http = summarizeFetchTrace(trace);
+  if (!detail && !http) return null;
+  return {
+    ...(http?.retryAfterSeconds !== null && http?.retryAfterSeconds !== undefined ? { retryAfterSeconds: http.retryAfterSeconds } : {}),
+    ...(detail ?? {}),
+    ...(http ? { http } : {}),
+  };
+}
+
+// decision: treat Retry-After as a minimum delay layered on the existing failure backoff; not a
+// replacement because a short remote hint must not erase protection from consecutive failures.
+function failedRetryAfter(error: unknown, trace: FetchTrace): number | null {
+  const reported = error instanceof BudgetExceededError
+    ? error.retryAfterSeconds
+    : error instanceof FetchError && error.retryAfterSeconds !== null
+      ? error.retryAfterSeconds
+      : summarizeFetchTrace(trace)?.retryAfterSeconds ?? null;
+  return reported !== null && Number.isFinite(reported)
+    ? Math.min(86_400, Math.max(1, Math.ceil(reported)))
+    : null;
+}
+
+async function runBounded<T>(items: T[], limit: number, work: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const at = next++;
+      if (at >= items.length) return;
+      await work(items[at]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(items.length, Math.max(1, limit)) }, worker));
+}
 
 export function noiseFiltered(c: Candidate, source: SourceRow): boolean {
   const f = source.config.ingestNoiseFilter;
@@ -91,6 +130,11 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
   }
 
   const [run] = await sql<{ id: number }[]>`INSERT INTO fetch_runs (source_id) VALUES (${sourceId}) RETURNING id`;
+  const trace = createFetchTrace();
+  return withFetchTrace(trace, () => collectLoadedSource(sourceId, source, run!.id, opts, trace));
+}
+
+async function collectLoadedSource(sourceId: string, source: SourceRow, runId: number, opts: { force?: boolean }, trace: FetchTrace): Promise<CollectResult> {
   const firstImport = !source.cursor?.initializedAt;
   let created = 0;
   let revised = 0;
@@ -111,8 +155,20 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
       else delete nextCursor.rss;
       if (rss.notModified) detail = { notModified: true, httpStatus: 304 };
     }
-    else if (source.kind === "web_list") candidates = await fetchWebList(source);
-    else if (source.kind === "json_list") candidates = await fetchJsonList(source);
+    else if (source.kind === "web_list") {
+      const web = await readWebList(source, opts);
+      candidates = web.candidates;
+      if (!firstImport && web.validator) nextCursor.web = web.validator;
+      else delete nextCursor.web;
+      if (web.notModified) detail = { notModified: true, httpStatus: 304 };
+    }
+    else if (source.kind === "json_list") {
+      const json = await readJsonList(source, opts);
+      candidates = json.candidates;
+      if (!firstImport && json.validator) nextCursor.json = json.validator;
+      else delete nextCursor.json;
+      if (json.notModified) detail = { notModified: true, httpStatus: 304 };
+    }
     else {
       const x = await fetchXSearch(source);
       candidates = x.candidates;
@@ -140,69 +196,88 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     // Detail pages only for material we have not seen (bounded per run), and only for what the listing lacks.
     const d = source.config.detail;
     const known = await storedTitles(candidates.map((c) => c.url));
-    const detailBudget = Number(d?.maxFetches ?? 0);
-    let detailUsed = 0;
-    for (const c of candidates) {
+    const detailBudget = Math.max(0, Number(d?.maxFetches ?? 0) || 0);
+    const detailTasks: Array<{ candidate: Candidate; need: DetailNeed }> = [];
+    for (const candidate of candidates) {
       // Listing dates the source marks unreliable are dropped; the detail page's rule decides.
-      if (d?.publishedAtAuthoritative === true) c.publishedAt = null;
-      const stored = known.get(c.url);
+      if (d?.publishedAtAuthoritative === true) candidate.publishedAt = null;
+      const stored = known.get(candidate.url);
       if (stored !== undefined) {
         // The title came from the detail page: the listing's own rendering must not revise it back.
-        if (d?.titleSelector || d?.titleRegex) c.title = stored;
+        if (d?.titleSelector || d?.titleRegex) candidate.title = stored;
         continue;
       }
-      if (!d || detailUsed >= detailBudget) continue;
+      if (!d || detailTasks.length >= detailBudget) continue;
       const need: DetailNeed = {
-        date: !c.publishedAt || d.upgradeDatePrecision === true,
-        title: !!(d.titleSelector || d.titleRegex) && (d.titleAuthoritative === true || needsTitle(c.title)),
-        summary: !!d.summarySelector && !c.excerpt,
-        body: source.participation_mode === "editorial" && !c.bodyText && (!c.bodyStatus || c.bodyStatus === "pending"),
+        date: !candidate.publishedAt || d.upgradeDatePrecision === true,
+        title: !!(d.titleSelector || d.titleRegex) && (d.titleAuthoritative === true || needsTitle(candidate.title)),
+        summary: !!d.summarySelector && !candidate.excerpt,
+        body: source.participation_mode === "editorial" && !candidate.bodyText && (!candidate.bodyStatus || candidate.bodyStatus === "pending"),
       };
       if (!need.date && !need.title && !need.summary) continue;
-      detailUsed += 1;
+      detailTasks.push({ candidate, need });
+    }
+
+    // decision: run only the preselected detail budget through bounded workers; not Promise.all over
+    // every candidate because that would exceed both the source budget and the origin request limit.
+    await runBounded(detailTasks, config.detailFetchConcurrency, async ({ candidate, need }) => {
       try {
-        const got = await fetchDetail(c.url, source, need);
-        if (got.title) c.title = got.title;
-        if (got.summary) c.excerpt = got.summary;
+        const got = await fetchDetail(candidate.url, source, need);
+        if (got.title) candidate.title = got.title;
+        if (got.summary) candidate.excerpt = got.summary;
         // The same Readability path as extraction, using bytes already fetched for the detail rules.
         // A confirmed body enters through normal material revisions and skips the redundant fetch job.
         if (got.body) {
-          c.bodyHtml = got.body.html;
-          c.bodyText = got.body.text;
-          c.bodyStatus = "ok";
-          if (!c.media?.length) c.media = got.body.images;
+          candidate.bodyHtml = got.body.html;
+          candidate.bodyText = got.body.text;
+          candidate.bodyStatus = "ok";
+          if (!candidate.media?.length) candidate.media = got.body.images;
         }
         // A date-only listing value gives way to the detail page's time on the same day.
-        if (got.publishedAt && (!c.publishedAt || Math.abs(got.publishedAt.getTime() - c.publishedAt.getTime()) < DAY_MS)) c.publishedAt = got.publishedAt;
+        if (got.publishedAt && (!candidate.publishedAt || Math.abs(got.publishedAt.getTime() - candidate.publishedAt.getTime()) < DAY_MS)) candidate.publishedAt = got.publishedAt;
       } catch {
         // detail is best effort
       }
-    }
+    });
 
     ({ created, revised } = await store(sourceId, candidates, firstImport ? "first-import" : null));
 
     if (firstImport) nextCursor.initializedAt = new Date().toISOString();
     nextCursor.lastOkAt = new Date().toISOString();
+    const successfulRetry = summarizeFetchTrace(trace)?.retryAfterSeconds ?? null;
     await sql`
       UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL,
         health = 'ok', cursor = ${sql.json(nextCursor as never)}, updated_at = now(),
-        next_fetch_at = now() + make_interval(mins => interval_minutes)
+        next_fetch_at = now() + GREATEST(
+          make_interval(mins => interval_minutes),
+          make_interval(secs => coalesce(${successfulRetry}::int, 0))
+        )
       WHERE id = ${sourceId}`;
+    const recordedDetail = observedRunDetail(detail, trace);
     await sql`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${found}, new_count = ${created},
-                detail = ${detail ? sql.json(detail as never) : null} WHERE id = ${run!.id}`;
+                detail = ${recordedDetail ? sql.json(recordedDetail as never) : null} WHERE id = ${runId}`;
     return { sourceId, status: "ok", found, created, revised };
   } catch (error) {
     const message = String(error instanceof Error ? error.message : error).slice(0, 1000);
     const budget = error instanceof BudgetExceededError;
+    const retryAfterSeconds = failedRetryAfter(error, trace);
     await sql`
       UPDATE sources SET last_fetch_at = now(),
         fail_count = CASE WHEN ${budget} THEN fail_count ELSE fail_count + 1 END,
         last_error = ${message},
         health = CASE WHEN ${budget} THEN health WHEN fail_count + 1 >= 5 THEN 'failing' ELSE 'degraded' END,
-        next_fetch_at = now() + make_interval(mins => CASE WHEN ${budget} THEN 15 ELSE LEAST(interval_minutes * (fail_count + 2), 360) END),
+        next_fetch_at = now() + GREATEST(
+          CASE
+            WHEN ${budget} THEN interval '15 minutes'
+            ELSE make_interval(mins => LEAST(interval_minutes * (fail_count + 2), 360))
+          END,
+          make_interval(secs => coalesce(${retryAfterSeconds}::int, 0))
+        ),
         updated_at = now()
       WHERE id = ${sourceId}`;
-    await sql`UPDATE fetch_runs SET status = 'failed', finished_at = now(), found_count = ${found}, new_count = ${created}, error = ${message} WHERE id = ${run!.id}`;
+    const recordedDetail = observedRunDetail(retryAfterSeconds === null ? null : { retryAfterSeconds }, trace);
+    await sql`UPDATE fetch_runs SET status = 'failed', finished_at = now(), found_count = ${found}, new_count = ${created}, error = ${message},
+                detail = ${recordedDetail ? sql.json(recordedDetail as never) : null} WHERE id = ${runId}`;
     return { sourceId, status: "failed", found, created, revised, error: message };
   }
 }
@@ -239,7 +314,7 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
   const members = (
     await sql<SourceRow[]>`
       SELECT id, name, kind, config, tier, participation_mode, first_party, interval_minutes, enabled, cursor, fail_count
-      FROM sources WHERE id IN ${sql(sourceIds)}`
+      FROM sources WHERE id IN ${sql(sourceIds)} ORDER BY id`
   ).filter((m) => m.enabled && shardHandle(m));
   if (members.length === 0) return { key, status: "skipped", accounts: 0, found: 0, created: 0 };
   const minutes = shardMinutes(members[0]!.participation_mode);
@@ -256,26 +331,36 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
     }
   }
   let read: XRead;
+  const trace = createFetchTrace();
   try {
-    read = await readXSearch(shardQuery(members.map((m) => shardHandle(m)!)), { lastId: String(since), backlog, subject: `x-shard:${key}` });
+    read = await withFetchTrace(trace, () => readXSearch(shardQuery(members.map((m) => shardHandle(m)!)), { lastId: String(since), backlog, subject: `x-shard:${key}` }));
   } catch (error) {
     const message = String(error instanceof Error ? error.message : error).slice(0, 1000);
     const budget = error instanceof BudgetExceededError;
+    const retryAfterSeconds = failedRetryAfter(error, trace);
+    const failureDetail = observedRunDetail({ shard: key, accounts: members.length, ...(retryAfterSeconds === null ? {} : { retryAfterSeconds }) }, trace)!;
     for (const m of members) {
       await sql`
         UPDATE sources SET last_fetch_at = now(),
           fail_count = CASE WHEN ${budget} THEN fail_count ELSE fail_count + 1 END,
           last_error = ${message},
           health = CASE WHEN ${budget} THEN health WHEN fail_count + 1 >= 5 THEN 'failing' ELSE 'degraded' END,
-          next_fetch_at = now() + make_interval(mins => CASE WHEN ${budget} THEN 15 ELSE LEAST(${minutes} * (fail_count + 2), 360) END),
+          next_fetch_at = now() + GREATEST(
+            CASE
+              WHEN ${budget} THEN interval '15 minutes'
+              ELSE make_interval(mins => LEAST(${minutes} * (fail_count + 2), 360))
+            END,
+            make_interval(secs => coalesce(${retryAfterSeconds}::int, 0))
+          ),
           updated_at = now()
         WHERE id = ${m.id}`;
-      await sql`UPDATE fetch_runs SET status = 'failed', finished_at = now(), error = ${message}, detail = ${sql.json({ shard: key, accounts: members.length })} WHERE id = ${runs.get(m.id)!}`;
+      await sql`UPDATE fetch_runs SET status = 'failed', finished_at = now(), error = ${message}, detail = ${sql.json(failureDetail as never)} WHERE id = ${runs.get(m.id)!}`;
     }
     return { key, status: "failed", accounts: members.length, found: 0, created: 0, error: message };
   }
 
-  const detail = { shard: key, accounts: members.length, pages: read.pages, truncated: read.truncated, backlog: read.backlog.length, backlogPages: read.backlogPages, dropped: read.dropped };
+  const successfulRetry = summarizeFetchTrace(trace)?.retryAfterSeconds ?? null;
+  const detail = observedRunDetail({ shard: key, accounts: members.length, pages: read.pages, truncated: read.truncated, backlog: read.backlog.length, backlogPages: read.backlogPages, dropped: read.dropped }, trace)!;
   let found = 0;
   let created = 0;
   for (const m of members) {
@@ -291,7 +376,10 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
     await sql`
       UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL,
         health = 'ok', cursor = ${sql.json(cursor as never)}, interval_minutes = ${minutes}, updated_at = now(),
-        next_fetch_at = now() + make_interval(mins => ${minutes})
+        next_fetch_at = now() + GREATEST(
+          make_interval(mins => ${minutes}),
+          make_interval(secs => coalesce(${successfulRetry}::int, 0))
+        )
       WHERE id = ${m.id}`;
     await sql`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${mine.length}, new_count = ${stored.created},
                 detail = ${sql.json(detail as never)} WHERE id = ${runs.get(m.id)!}`;

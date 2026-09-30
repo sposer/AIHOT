@@ -7,7 +7,9 @@ import { queueProcessing } from "../jobs/content.ts";
 import { stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
+import { createFetchTrace, withFetchTrace } from "../lib/http-fetch.ts";
 import { mpArticle, mpHistory, type MpArticle } from "../providers/dajiala.ts";
+import { observedRunDetail } from "./collect.ts";
 import { BudgetExceededError, ProviderRejectedError } from "../providers/receipts.ts";
 
 const MAX_NEW_PER_CHECK = 8;
@@ -44,12 +46,13 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
   const ghid = source.config.ghid ?? source.config.wxid;
   if (!ghid) return { sourceId, status: "unconfigured" as const };
   const [run] = await sql<{ id: number }[]>`INSERT INTO fetch_runs (source_id, detail) VALUES (${sourceId}, ${sql.json({ reason })}) RETURNING id`;
+  const trace = createFetchTrace();
   const firstCheck = !source.cursor?.lastCheckedAt;
   let created = 0;
   try {
     // One paid list call per account per 10-minute window, whoever asks.
     const window = `${reason === "schedule" ? "s" : "m"}:${Math.floor(Date.now() / 600_000)}`;
-    const history = await mpHistory(ghid, { subject: sourceId, window });
+    const history = await withFetchTrace(trace, () => mpHistory(ghid, { subject: sourceId, window }));
     const posts = [...history.posts].sort((a, b) => b.post_time - a.post_time);
     let fetched = 0;
     for (const p of posts) {
@@ -67,7 +70,7 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
       if (known && !retryBody) continue;
       fetched += 1;
       // Without a body the post is listed anyway; analysis works from title and digest.
-      const { body, passing } = await fetchBody(p.url, sourceId, p.sn ?? p.url);
+      const { body, passing } = await withFetchTrace(trace, () => fetchBody(p.url, sourceId, p.sn ?? p.url));
       if (known && !body?.content) {
         const retry = passing ? sql`jsonb_set(raw, '{dajiala,bodyRetry}', ${sql.json({ attempts: known.retry!.attempts + 1, error: passing })})` : sql`raw #- '{dajiala,bodyRetry}'`;
         await sql`UPDATE articles SET raw = ${retry} WHERE id = ${known.id}`;
@@ -108,7 +111,8 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
       UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL, health = 'ok', cursor = ${sql.json(cursor as never)},
         next_fetch_at = now() + make_interval(mins => interval_minutes), updated_at = now()
       WHERE id = ${sourceId}`;
-    await sql`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${posts.length}, new_count = ${created} WHERE id = ${run!.id}`;
+    const detail = observedRunDetail({ reason }, trace);
+    await sql`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${posts.length}, new_count = ${created}, detail = ${sql.json(detail as never)} WHERE id = ${run!.id}`;
     return { sourceId, status: "ok" as const, found: posts.length, created, reused: history.reused };
   } catch (error) {
     const message = String(error instanceof Error ? error.message : error).slice(0, 500);
@@ -118,7 +122,8 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
         fail_count = CASE WHEN ${soft} THEN fail_count ELSE fail_count + 1 END,
         health = CASE WHEN ${soft} THEN health WHEN fail_count + 1 >= 3 THEN 'failing' ELSE 'degraded' END, updated_at = now()
       WHERE id = ${sourceId}`;
-    await sql`UPDATE fetch_runs SET status = 'failed', finished_at = now(), new_count = ${created}, error = ${message} WHERE id = ${run!.id}`;
+    const detail = observedRunDetail({ reason }, trace);
+    await sql`UPDATE fetch_runs SET status = 'failed', finished_at = now(), new_count = ${created}, error = ${message}, detail = ${sql.json(detail as never)} WHERE id = ${run!.id}`;
     if (soft) throw error; // retried by the queue
     return { sourceId, status: "failed" as const, error: message };
   }

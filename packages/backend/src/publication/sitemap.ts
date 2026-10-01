@@ -3,6 +3,9 @@
 // background after that (crawlers get the previous copy meanwhile); if the database fails, the last
 // successful sitemap is served (never an empty one). Bounded.
 import { FEATURES } from "@aihot/industry/features";
+import { REPORT_SCOPES, type ReportKind, type ReportScope } from "@aihot/contracts/site";
+import { DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
+import { reportPath, reportArchivePath } from "@aihot/contracts/http-policy";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.ts";
@@ -34,16 +37,13 @@ interface Entry {
 async function build(): Promise<string> {
   const entries: Entry[] = [];
   const [latestItem] = await sql<{ t: Date | null }[]>`SELECT max(timeline_at) AS t FROM publications WHERE visibility = 'public' AND selected`;
-  const [latestDaily] = await sql<{ key: string | null; t: Date | null }[]>`SELECT max(key) AS key, max(generated_at) AS t FROM reports WHERE kind = 'daily'`;
+  const latestReports = await sql<{ kind: ReportKind; scope: ReportScope; t: Date }[]>`SELECT kind, scope, max(generated_at) AS t FROM reports GROUP BY kind, scope`;
+  const lastReport = (kind: ReportKind, scope: ReportScope) => latestReports.find((r) => r.kind === kind && r.scope === scope)?.t;
   const now = latestItem?.t ?? new Date();
   entries.push(
     { loc: "/", lastmod: now, changefreq: "hourly", priority: 1 },
     { loc: "/all", lastmod: now, changefreq: "hourly", priority: 0.9 },
-    { loc: "/daily", lastmod: latestDaily?.t, changefreq: "daily", priority: 0.9 },
     { loc: "/hot", lastmod: now, changefreq: "hourly", priority: 0.9 },
-    { loc: "/daily/archive", lastmod: latestDaily?.t, changefreq: "daily", priority: 0.7 },
-    { loc: "/weekly", changefreq: "weekly", priority: 0.7 },
-    { loc: "/monthly", changefreq: "monthly", priority: 0.6 },
     { loc: "/topics", changefreq: "daily", priority: 0.7 },
     { loc: "/agent", lastmod: now, changefreq: "weekly", priority: 0.7 },
     { loc: "/about", changefreq: "monthly", priority: 0.5 },
@@ -51,6 +51,13 @@ async function build(): Promise<string> {
     { loc: "/privacy", changefreq: "monthly", priority: 0.4 },
     { loc: "/changelog", lastmod: now, changefreq: "weekly", priority: 0.5 },
   );
+  for (const domain of DOMAIN_KEYS) entries.push({ loc: `/all/${domain}`, lastmod: now, changefreq: "hourly", priority: 0.8 });
+  for (const scope of REPORT_SCOPES) {
+    for (const kind of ["daily", "weekly", "monthly"] as const) {
+      entries.push({ loc: reportPath(kind, scope), lastmod: lastReport(kind, scope), changefreq: kind === "daily" ? "daily" : "weekly", priority: kind === "daily" ? 0.9 : 0.6 });
+    }
+    entries.push({ loc: reportArchivePath(scope), lastmod: lastReport("daily", scope), changefreq: "daily", priority: 0.7 });
+  }
   if (FEATURES.leaderboard) {
     entries.push(
       { loc: "/leaderboard", changefreq: "daily", priority: 0.8 },
@@ -60,8 +67,8 @@ async function build(): Promise<string> {
     for (const board of ["coding", "reasoning", "knowledge", "professional"]) entries.push({ loc: `/leaderboard/category/${board}`, changefreq: "daily", priority: 0.6 });
   }
   if (FEATURES.codexResetMonitor) entries.push({ loc: "/codex-reset", changefreq: "hourly", priority: 0.6 });
-  const reports = await sql<{ kind: string; key: string; generated_at: Date }[]>`SELECT kind, key, generated_at FROM reports ORDER BY kind, key DESC`;
-  for (const r of reports) entries.push({ loc: `/${r.kind}/${r.key}`, lastmod: r.generated_at, changefreq: r.kind === "daily" ? "never" : "monthly", priority: r.kind === "daily" ? 0.6 : 0.6 });
+  const reports = await sql<{ kind: ReportKind; scope: ReportScope; key: string; generated_at: Date }[]>`SELECT kind, scope, key, generated_at FROM reports ORDER BY kind, scope, key DESC`;
+  for (const r of reports) entries.push({ loc: reportPath(r.kind, r.scope, r.key), lastmod: r.generated_at, changefreq: r.kind === "daily" ? "never" : "monthly", priority: r.kind === "daily" ? 0.6 : 0.6 });
   for (const t of await topicPageCounts()) {
     if (!t.indexable) continue;
     entries.push({ loc: `/topics/${t.slug}`, lastmod: t.latest, changefreq: "daily", priority: 0.6 });

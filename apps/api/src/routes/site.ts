@@ -2,7 +2,7 @@
 // Reads through the same public read layer as v1; no cookies are read or set.
 import { FEATURES } from "@aihot/industry/features";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { isCategoryKey, isChannelKey, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
+import { isCategoryKey, isChannelKey, isDomainKey, type CategoryKey, type ChannelKey, type DomainKey } from "@aihot/contracts/taxonomy";
 import { InvalidCursorError } from "@aihot/backend/lib/cursor";
 import { exportMarkdown, loadItemDetail, siteItemDetail } from "@aihot/backend/publication/detail";
 import { loadPool, SearchBusyError } from "@aihot/backend/publication/pool";
@@ -56,7 +56,14 @@ export function siteHandler(fn: Handler): Handler {
   };
 }
 
+export function parseDomain(q: Record<string, string>): DomainKey | null {
+  const domain = q.domain ?? null;
+  if (domain !== null && !isDomainKey(domain)) throw new BadRequest("invalid domain");
+  return domain;
+}
+
 export interface FilterParams {
+  domain: DomainKey | null;
   channel: ChannelKey;
   category: CategoryKey | null;
   tag: string | null;
@@ -76,7 +83,7 @@ export async function parseFilters(q: Record<string, string>): Promise<FilterPar
     topicTags = await loadTopicTags(topic);
     if (!topicTags) throw new BadRequest("unknown topic");
   }
-  return { channel, category: category as CategoryKey | null, tag, topic, topicTags };
+  return { domain: parseDomain(q), channel, category: category as CategoryKey | null, tag, topic, topicTags };
 }
 
 export function registerSite(app: FastifyInstance) {
@@ -90,7 +97,7 @@ export function registerSite(app: FastifyInstance) {
     const q = looseQuery(req);
     const filters = await parseFilters(q);
     const limit = Math.min(Math.max(Number(q.limit) || 20, 1), 40);
-    const unfiltered = filters.channel === "all" && !filters.category && !filters.tag && !filters.topic && !q.cursor;
+    const unfiltered = !filters.domain && filters.channel === "all" && !filters.category && !filters.tag && !filters.topic && !q.cursor;
     const [data, hot] = await Promise.all([
       loadTimeline({ ...filters, cursor: q.cursor || null, limit }),
       unfiltered ? loadHotStrip() : null,
@@ -209,29 +216,31 @@ export function registerSite(app: FastifyInstance) {
   app.get("/api/site/reports/:kind", siteHandler(async (req, reply) => {
     const kind = (req.params as { kind: string }).kind;
     if (!["daily", "weekly", "monthly"].includes(kind)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "unknown report kind" });
-    const data = await listReports(kind as ReportKind);
-    return sendJsonWithEtag(req, reply, { kind, items: data }, { etagPrefix: "reports", cacheControl: "public, max-age=60, s-maxage=60" });
+    const scope = parseDomain(looseQuery(req)) ?? "all";
+    const data = await listReports(kind as ReportKind, scope);
+    return sendJsonWithEtag(req, reply, { kind, scope, items: data }, { etagPrefix: "reports", cacheControl: "public, max-age=60, s-maxage=60" });
   }));
 
   // The latest report page needs its archive selector and the report in one HTTP request.
   app.get("/api/site/reports/:kind/latest-page", siteHandler(async (req, reply) => {
     const kind = (req.params as { kind: string }).kind;
     if (!["daily", "weekly", "monthly"].includes(kind)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "unknown report kind" });
-    const index = await listReports(kind as ReportKind);
-    const report = index[0] ? await loadReport(kind as ReportKind, index[0].key) : null;
-    return sendJsonWithEtag(req, reply, { index: reportNavigation(kind as ReportKind, index, report?.key ?? ""), report }, { etagPrefix: "report-latest", cacheControl: "public, max-age=60, s-maxage=60" });
+    const scope = parseDomain(looseQuery(req)) ?? "all";
+    const index = await listReports(kind as ReportKind, scope);
+    const report = index[0] ? await loadReport(kind as ReportKind, scope, index[0].key) : null;
+    return sendJsonWithEtag(req, reply, { scope, index: reportNavigation(kind as ReportKind, index, report?.key ?? ""), report }, { etagPrefix: "report-latest", cacheControl: "public, max-age=60, s-maxage=60" });
   }));
 
   app.get("/api/site/reports/:kind/navigation/:key", siteHandler(async (req, reply) => {
     const { kind, key } = req.params as { kind: string; key: string };
     if (!["daily", "weekly", "monthly"].includes(kind) || !/^\d{4}-(\d{2}(-\d{2})?|W\d{2})$/.test(key)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found" });
-    return sendJsonWithEtag(req, reply, { items: await loadReportNavigation(kind as ReportKind, key) }, { etagPrefix: "report-navigation", cacheControl: "public, max-age=60, s-maxage=60" });
+    return sendJsonWithEtag(req, reply, { items: await loadReportNavigation(kind as ReportKind, parseDomain(looseQuery(req)) ?? "all", key) }, { etagPrefix: "report-navigation", cacheControl: "public, max-age=60, s-maxage=60" });
   }));
 
   app.get("/api/site/reports/daily/months/:month", siteHandler(async (req, reply) => {
     const { month } = req.params as { month: string };
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "month not found" });
-    return sendJsonWithEtag(req, reply, { items: await loadReportMonth("daily", month) }, { etagPrefix: "report-month", cacheControl: "public, max-age=60, s-maxage=60" });
+    return sendJsonWithEtag(req, reply, { items: await loadReportMonth("daily", parseDomain(looseQuery(req)) ?? "all", month) }, { etagPrefix: "report-month", cacheControl: "public, max-age=60, s-maxage=60" });
   }));
 
   app.get("/api/site/reports/:kind/:key", siteHandler(async (req, reply) => {
@@ -239,7 +248,7 @@ export function registerSite(app: FastifyInstance) {
     if (!["daily", "weekly", "monthly"].includes(kind) || !/^\d{4}-(\d{2}(-\d{2})?|W\d{2})$/.test(key)) {
       return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found" });
     }
-    const data = await loadReport(kind as ReportKind, key);
+    const data = await loadReport(kind as ReportKind, parseDomain(looseQuery(req)) ?? "all", key);
     if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found", cacheControl: "public, max-age=60" });
     return sendJsonWithEtag(req, reply, data, { etagPrefix: "report", cacheControl: "public, max-age=120, s-maxage=120" });
   }));

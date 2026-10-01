@@ -3,7 +3,7 @@
 // ledger → grouping → deliveries. Visibility changes and manual corrections go through editorial
 // overrides with a version check, are re-projected to every public exit, and are audited.
 import { z } from "zod";
-import { ARTICLE_ID_PATTERN, CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
+import { ARTICLE_ID_PATTERN, CATEGORY_KEYS, DOMAIN_KEYS, normalizeDomains } from "@aihot/contracts/taxonomy";
 import { sql } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
@@ -120,6 +120,7 @@ const FieldsSchema = z
     summary: z.string().max(2000),
     reason: z.string().max(1000),
     category: z.enum(CATEGORY_KEYS as unknown as [string, ...string[]]),
+    domains: z.array(z.enum(DOMAIN_KEYS)).max(DOMAIN_KEYS.length).transform(normalizeDomains),
     tags: z.array(z.string().max(60)).max(20),
     selected: z.boolean(),
     silent: z.boolean(),

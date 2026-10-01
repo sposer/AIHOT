@@ -1,21 +1,23 @@
 import { SITE, withSubject } from "@aihot/industry/site";
 import { Link, useLoaderData } from "react-router";
 import type { ReportIndexEntry } from "@aihot/contracts/site";
-import { apiGet } from "../lib/api.server";
+import { apiGet, queryString } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 import { beijingDate, beijingWeekday } from "../lib/format";
 import { ReportLayout } from "../features/report/ReportLayout";
-import { archiveGroups } from "../features/report/format";
+import { archiveGroups, latestScope, reportPath, reportArchivePath, reportTitle } from "../features/report/format";
 import { Rows, SectionPage } from "../features/report/ReportPaper";
 import { Nameplate } from "../features/report/Nameplate";
 
-export async function loader({ request }: { request: Request }) {
-  const { items: index } = await apiGet<{ items: ReportIndexEntry[] }>("/api/site/reports/daily", { signal: request.signal });
-  return { index, today: beijingDate(Date.now()) };
+export async function loader({ request, params }: { request: Request; params: { domain?: string } }) {
+  const scope = latestScope(params.domain);
+  const { items: index } = await apiGet<{ items: ReportIndexEntry[] }>(`/api/site/reports/daily${queryString({ domain: scope === "all" ? null : scope })}`, { signal: request.signal });
+  return { scope, index, today: beijingDate(Date.now()) };
 }
 
-export function meta() {
-  return pageMeta({ title: `${withSubject("日报")} · 历史存档`, description: `${SITE.name} 历史日报，按日期归档。`, path: "/daily/archive", image: "/og/pages/daily.png" });
+export function meta({ loaderData }: { loaderData: Awaited<ReturnType<typeof loader>> | undefined }) {
+  const scope = loaderData?.scope ?? "all";
+  return pageMeta({ title: `${reportTitle("daily", scope)} · 历史存档`, description: `${SITE.name} 历史日报，按日期归档。`, path: reportArchivePath(scope), image: "/og/pages/daily.png" });
 }
 
 export function headers() {
@@ -23,14 +25,14 @@ export function headers() {
 }
 
 export default function DailyArchive() {
-  const { index, today } = useLoaderData<typeof loader>();
+  const { scope, index, today } = useLoaderData<typeof loader>();
   const months = archiveGroups("daily", index);
   return (
-    <ReportLayout kind="daily" index={index} current={null} today={today}>
+    <ReportLayout kind="daily" scope={scope} index={index} current={null} today={today}>
       <div className="@container">
         <header className="pt-5 lg:pt-0">
           <div className="flex items-center justify-between gap-4 text-[12px] text-ink-4">
-            <span>{SITE.name} · {withSubject("日报")}</span>
+            <span>{SITE.name} · {reportTitle("daily", scope)}</span>
             <span>
               共 <span className="num">{index.length}</span> 期
             </span>
@@ -47,13 +49,13 @@ export default function DailyArchive() {
           <SectionPage key={m.id} id={`m-${m.id}`} label={m.label}>
             <Rows items={m.entries}>
               {(e, cell) => (
-                <Link key={e.key} to={`/daily/${e.key}`} prefetch="intent" className={`group flex gap-4 py-4 ${cell}`}>
+                <Link key={e.key} to={reportPath("daily", scope, e.key)} prefetch="intent" className={`group flex gap-4 py-4 ${cell}`}>
                   <span className="flex w-9 shrink-0 flex-col items-center">
                     <span className="num text-[24px] font-black leading-none tracking-[-0.03em] text-ink transition-colors group-hover:text-accent">{e.key.slice(8, 10)}</span>
                     <span className="mt-1.5 text-[10.5px] leading-none text-ink-4">{beijingWeekday(e.key).replace("星期", "周")}</span>
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[15px] font-bold leading-[1.55] text-ink transition-colors group-hover:text-accent">{e.title ?? `${withSubject("日报")} ${e.key}`}</span>
+                    <span className="block text-[15px] font-bold leading-[1.55] text-ink transition-colors group-hover:text-accent">{e.title ?? `${reportTitle("daily", scope)} ${e.key}`}</span>
                     <span className="mt-1 block text-[12px] text-ink-4">
                       <span className="num">{e.count}</span> 件大事
                     </span>

@@ -1,4 +1,5 @@
 // Publication rules. Each rule is defined once here and used by every exit.
+import type { DomainKey } from "@aihot/contracts/taxonomy";
 
 export interface SourceFacts {
   id: string;
@@ -15,14 +16,15 @@ export function channelOf(sourceKind: string, hasXPost: boolean): "x" | "news" {
   return sourceKind === "x_search" || hasXPost ? "x" : "news";
 }
 
-/** Public pool (/all): editorial sources, AI relevant, with a Chinese title and summary. */
+/** Public pool (/all): editorial sources, domain relevant, with a Chinese title and summary. */
 export function isPoolEligible(input: {
   participationMode: string;
   relevance: string | null;
+  domains: readonly DomainKey[];
   title: string | null;
   summary: string | null;
 }): boolean {
-  return input.participationMode === "editorial" && input.relevance === "pass" && !!input.title && !!input.summary;
+  return input.participationMode === "editorial" && input.relevance === "pass" && input.domains.length > 0 && !!input.title && !!input.summary;
 }
 
 /**

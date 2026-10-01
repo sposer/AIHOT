@@ -7,6 +7,8 @@ import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
+import type { ReportKind } from "@aihot/contracts/site";
+import { load } from "cheerio";
 import { releaseBoundCache } from "../app/lib/api.server.ts";
 
 let web: ChildProcess;
@@ -16,6 +18,11 @@ let deadline: number;
 let refreshAt: string;
 let metaDelayMs = 0;
 const apiCookies: Array<string | undefined> = [];
+const reportKeys: Record<ReportKind, string[]> = {
+  daily: ["2026-09-28", "2026-09-27", "2026-09-26", "2026-09-25"],
+  weekly: ["2026-W39", "2026-W38", "2026-W37", "2026-W36"],
+  monthly: ["2026-09", "2026-08", "2026-07", "2026-06"],
+};
 const api = createServer((req, res) => {
   const url = new URL(req.url!, "http://api.local");
   apiCookies.push(req.headers.cookie);
@@ -29,6 +36,32 @@ const api = createServer((req, res) => {
     res.setHeader("X-Accel-Expires", `@${deadline}`);
     res.setHeader("Cache-Control", "public, max-age=30, s-maxage=30");
     return res.end(JSON.stringify({ filters, cards: [], nextCursor: null, refreshAt, dayCounts: [], hot: null, generatedAt: "2026-09-28T00:00:00Z" }));
+  }
+  if (url.pathname === "/api/site/pool") {
+    const domain = url.searchParams.get("domain");
+    return res.end(JSON.stringify({
+      filters: { domain, channel: "all", category: null, tag: null, q: null, tab: "time" },
+      items: [], page: 1, pageCount: 1, total: 0, todayCount: 0, freshness: "2026-09-28T00:00:00Z", generatedAt: "2026-09-28T00:00:00Z",
+    }));
+  }
+  const reportRoute = /^\/api\/site\/reports\/(daily|weekly|monthly)(?:\/|$)/.exec(url.pathname);
+  if (reportRoute) {
+    const kind = reportRoute[1] as ReportKind;
+    const scope = url.searchParams.get("domain") ?? "all";
+    const keys = reportKeys[kind];
+    const last = url.pathname.split("/").at(-1)!;
+    const key = keys.includes(last) ? last : keys[0]!;
+    const at = keys.indexOf(key);
+    const index = keys.map((key, i) => ({ scope, key, title: i === 0 ? `edition-${scope}` : null, generatedAt: "2026-09-28T00:00:00Z", count: 0 }));
+    const report = {
+      kind, scope, key, title: `edition-${scope}`, windowStart: "2026-09-27T00:00:00Z", windowEnd: "2026-09-28T00:00:00Z",
+      generatedAt: "2026-09-28T00:00:00Z", revision: 1, lead: at === 0 ? { title: `edition-${scope}`, leadParagraph: "临床研究" } : null,
+      overview: null, highlights: [], sections: [], stories: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1,
+      prev: keys[at + 1] ?? null, next: keys[at - 1] ?? null,
+    };
+    if (url.pathname.endsWith("/latest-page")) return res.end(JSON.stringify({ scope, index, report }));
+    if (url.pathname === `/api/site/reports/${kind}` || url.pathname.includes("/navigation/") || url.pathname.includes("/months/")) return res.end(JSON.stringify({ scope, items: index }));
+    return res.end(JSON.stringify(report));
   }
   if (url.pathname === "/api/site/hot") return res.end(JSON.stringify({ entries: [] }));
   if (url.pathname === "/api/site/echo-client") return res.end(JSON.stringify({ forwarded: req.headers["x-forwarded-for"], real: req.headers["x-real-ip"] }));
@@ -219,4 +252,48 @@ test("browser caching preserves noindex and private sign-in responses", async ()
 test("a visitor cannot name its own address to the api without a trusted proxy in front", async () => {
   const res = await fetch(`${origin}/api/site/echo-client`, { headers: { "X-Forwarded-For": "6.6.6.6", "X-Real-IP": "6.6.6.6" } });
   assert.deepEqual(await res.json(), { forwarded: "127.0.0.1", real: "127.0.0.1" });
+});
+
+
+test("domain pages and editions retain their scope through SSR, navigation and canonical URLs", async () => {
+  const canonicalOf = (html: string) => html.match(/<link rel="canonical" href="([^"]+)"/)?.[1];
+  for (const pathname of ["/all/medical", "/daily", "/daily/medical", "/daily/all/2026-09-28", "/daily/medical/2026-09-28", "/daily/medical/archive"]) {
+    const res = await fetch(origin + pathname);
+    assert.equal(res.status, 200, pathname);
+    const html = await res.text();
+    assert.equal(new URL(canonicalOf(html)!).pathname, pathname);
+    if (pathname.startsWith("/daily/medical")) {
+      assert.match(html, /href="\/daily\/medical\/2026-09-28"/);
+      assert.match(html, /href="\/weekly\/medical"/);
+      assert.match(html, /href="\/monthly\/medical"/);
+      assert.doesNotMatch(html, /href="\/daily\/all\/2026-09-28"/);
+      if (!pathname.endsWith("/archive")) {
+        const image = html.match(/<meta property="og:image" content="([^"]+)"/)?.[1];
+        assert.equal(new URL(image!).pathname, "/og/reports/daily/medical/2026-09-28.png");
+      }
+    }
+    const data = await fetch(`${origin}${pathname}.data`);
+    assert.equal(data.status, 200, `${pathname}.data`);
+    const body = await data.text();
+    if (pathname.includes("medical")) assert.ok(body.includes("medical"));
+  }
+  for (const [kind, label] of [["daily", "日报"], ["weekly", "周报"], ["monthly", "月报"]] as const) {
+    for (const [scope, subject] of [["medical", "医疗"], ["all", ""]] as const) {
+      const res = await fetch(`${origin}/${kind}/${scope}/${reportKeys[kind][2]}`);
+      assert.equal(res.status, 200);
+      const $ = load(await res.text());
+      const neighbours = $(`nav[aria-label="${kind === "daily" ? "前后日报" : "前后各期"}"]`);
+      for (const key of [reportKeys[kind][1]!, reportKeys[kind][3]!]) {
+        const selector = `a[href="/${kind}/${scope}/${key}"]`;
+        assert.equal(neighbours.find(selector).children("span").last().text(), `${subject}${label} · ${key}`);
+        assert.equal($("aside nav").find(selector).children("span").last().text(), `${subject}${label} ${key}`);
+        if (kind !== "daily") assert.equal($("#report-history").find(selector).children("span").last().text(), `MyHOT ${subject}${label} · ${key}`);
+      }
+    }
+  }
+  for (const pathname of ["/daily/2026-09-28", "/daily/all", "/daily/unknown", "/all/unknown"]) {
+    const res = await fetch(origin + pathname);
+    assert.equal(res.status, 404, pathname);
+    await res.text();
+  }
 });

@@ -1,16 +1,26 @@
 // Reports through the public read layer: website DTOs and the v1 shapes. Only real reports are
 // listed; a missing date is a 404, never another day. Withdrawn citations are marked, not shown.
-import type { ReportCitation, ReportDetail, ReportIndexEntry, ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
+import type { ReportCitation, ReportDetail, ReportIndexEntry, ReportNavigationEntry, ReportKind, ReportScope } from "@aihot/contracts/site";
 import { sql } from "../db.ts";
 import { cached, type Cached } from "../lib/cache.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { dailyUrl, itemUrl, siteUrl } from "./links.ts";
-import { SITE, withSubject } from "@aihot/industry/site";
+import { SITE } from "@aihot/industry/site";
+import { DOMAIN_LABELS } from "@aihot/contracts/taxonomy";
+import { reportPath } from "@aihot/contracts/http-policy";
+
+/** Newly generated canonical report URLs for the existing IndexNow watermark. */
+export async function updatedReportUrls(since: Date, now: Date): Promise<string[]> {
+  const rows = await sql<{ kind: ReportKind; scope: ReportScope; key: string }[]>`
+    SELECT kind, scope, key FROM reports WHERE generated_at > ${since} AND generated_at <= ${now}`;
+  return rows.map((r) => siteUrl(reportPath(r.kind, r.scope, r.key)));
+}
 
 export type { ReportKind };
 
 interface ReportRow {
   kind: ReportKind;
+  scope: ReportScope;
   key: string;
   window_start: Date;
   window_end: Date;
@@ -60,7 +70,7 @@ export async function unavailableIds(ids: string[]): Promise<Set<string>> {
 }
 
 /** Directory/feed metadata only: citation summaries and full report prose stay in the detail read. */
-export async function reportIndexRows(kind: ReportKind, limit: number) {
+export async function reportIndexRows(kind: ReportKind, scope: ReportScope, limit: number) {
   return sql<{ key: string; content: Record<string, any>; generated_at: Date }[]>`
     SELECT key, generated_at, jsonb_build_object(
       'lead', content->'lead', 'headline', content->'headline', 'title', content->'title',
@@ -70,7 +80,7 @@ export async function reportIndexRows(kind: ReportKind, limit: number) {
          FROM jsonb_array_elements(jsonb_path_query_array(content,
            CASE WHEN kind = 'daily' THEN '$.sections[*].items[*]'::jsonpath ELSE '$.themes[*].storyRefs[*]'::jsonpath END
          )) WITH ORDINALITY AS cited(item, ord))))) AS content
-    FROM reports WHERE kind = ${kind} ORDER BY key DESC LIMIT ${limit}`;
+    FROM reports WHERE kind = ${kind} AND scope = ${scope} ORDER BY key DESC LIMIT ${limit}`;
 }
 
 /**
@@ -188,15 +198,15 @@ function readingMinutes(text: string): number {
   return Math.max(1, Math.round([...text].length / 450));
 }
 
-async function neighbors(kind: ReportKind, key: string): Promise<{ prev: string | null; next: string | null }> {
+async function neighbors(kind: ReportKind, scope: ReportScope, key: string): Promise<{ prev: string | null; next: string | null }> {
   const [row] = await sql<{ prev: string | null; next: string | null }[]>`
-    SELECT (SELECT key FROM reports WHERE kind = ${kind} AND key < ${key} ORDER BY key DESC LIMIT 1) AS prev,
-      (SELECT key FROM reports WHERE kind = ${kind} AND key > ${key} ORDER BY key ASC LIMIT 1) AS next`;
+    SELECT (SELECT key FROM reports WHERE kind = ${kind} AND scope = ${scope} AND key < ${key} ORDER BY key DESC LIMIT 1) AS prev,
+      (SELECT key FROM reports WHERE kind = ${kind} AND scope = ${scope} AND key > ${key} ORDER BY key ASC LIMIT 1) AS next`;
   return { prev: row?.prev ?? null, next: row?.next ?? null };
 }
 
-export async function loadReport(kind: ReportKind, key: string): Promise<ReportDetail | null> {
-  const [r] = await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = ${kind} AND key = ${key}`;
+export async function loadReport(kind: ReportKind, scope: ReportScope, key: string): Promise<ReportDetail | null> {
+  const [r] = await sql<ReportRow[]>`SELECT kind, scope, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = ${kind} AND scope = ${scope} AND key = ${key}`;
   if (!r) return null;
   const c = r.content;
   const rawItems: Array<Record<string, any>> = [
@@ -225,12 +235,13 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
   const text = [c.lead?.leadParagraph ?? "", c.overview ?? "", ...all.map((i: ReportCitation) => `${i.title}${i.summary ?? ""}`)].join("");
   // A weekly or monthly's picture comes from its first highlight and is captioned with that story.
   const leadItem = kind === "daily" ? leadItemOf(c.lead?.title, highlights, all) : (highlights[0] ?? all[0]);
-  const [{ prev, next }, picture] = await Promise.all([neighbors(kind, key), leadItem?.itemId && leadItem.available ? leadCover(leadItem.itemId) : null]);
+  const [{ prev, next }, picture] = await Promise.all([neighbors(kind, scope, key), leadItem?.itemId && leadItem.available ? leadCover(leadItem.itemId) : null]);
   const cover = picture && leadItem ? { ...picture, caption: kind === "daily" ? null : leadItem.title } : null;
   const headline = kind === "daily" ? null : periodicHeadline(c);
-  const title = kind === "daily" ? `${withSubject("日报")} · ${key}` : String(c.title ?? (kind === "weekly" ? `${SITE.name} 周报 · ${key}` : `${SITE.name} 月报 · ${key}`));
+  const title = kind === "daily" ? `${scope === "all" ? "" : `${DOMAIN_LABELS[scope]} `}日报 · ${key}` : String(c.title ?? (kind === "weekly" ? `${SITE.name} 周报 · ${key}` : `${SITE.name} 月报 · ${key}`));
   return {
     kind,
+    scope,
     key,
     title,
     windowStart: r.window_start.toISOString(),
@@ -257,27 +268,29 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
  * withdrawal shows within a minute, like the pages' own caches).
  */
 const INDEX_LIMIT = 400;
-const indexes = new Map<ReportKind, Cached<{ rows: Awaited<ReturnType<typeof reportIndexRows>>; gone: Set<string> }>>();
-export function reportIndex(kind: ReportKind) {
-  let entry = indexes.get(kind);
+const indexes = new Map<string, Cached<{ rows: Awaited<ReturnType<typeof reportIndexRows>>; gone: Set<string> }>>();
+export function reportIndex(kind: ReportKind, scope: ReportScope) {
+  const key = `${kind}:${scope}`;
+  let entry = indexes.get(key);
   if (!entry) {
     entry = cached(async () => {
-      const rows = await reportIndexRows(kind, INDEX_LIMIT);
+      const rows = await reportIndexRows(kind, scope, INDEX_LIMIT);
       return { rows, gone: await unavailableHeadlineIds(rows, kind === "daily" ? "daily" : "periodic") };
     }, { freshMs: 60_000, maxStaleMs: 10 * 60_000 });
-    indexes.set(kind, entry);
+    indexes.set(key, entry);
   }
   return entry.get();
 }
 
-export async function listReports(kind: ReportKind, limit = INDEX_LIMIT): Promise<ReportIndexEntry[]> {
-  const index = await reportIndex(kind);
+export async function listReports(kind: ReportKind, scope: ReportScope, limit = INDEX_LIMIT): Promise<ReportIndexEntry[]> {
+  const index = await reportIndex(kind, scope);
   const rows = index.rows.slice(0, limit);
   const shape = kind === "daily" ? "daily" : "periodic";
   const gone = index.gone;
   return rows.map((r) => {
     const items = kind === "daily" ? (r.content.sections ?? []).flatMap((s: any) => s.items ?? []) : (r.content.themes ?? []).flatMap((t: any) => t.storyRefs ?? []);
     return {
+      scope,
       key: r.key,
       title: reportHeadline(r.content, shape, gone),
       generatedAt: r.generated_at.toISOString(),
@@ -292,13 +305,14 @@ export async function listReports(kind: ReportKind, limit = INDEX_LIMIT): Promis
 
 const attribution = (url: string) => ({ name: SITE.name, url });
 
-export async function v1Dailies(limit: number) {
-  const index = await reportIndex("daily");
+export async function v1Dailies(scope: ReportScope, limit: number) {
+  const index = await reportIndex("daily", scope);
   const rows = index.rows.slice(0, limit);
   const gone = index.gone;
   const items = rows.map((r) => {
-    const url = dailyUrl(r.key);
+    const url = dailyUrl(scope, r.key);
     return {
+      scope,
       date: r.key,
       generatedAt: r.generated_at.toISOString(),
       leadTitle: reportHeadline(r.content, "daily", gone),
@@ -307,23 +321,24 @@ export async function v1Dailies(limit: number) {
       attribution: attribution(url),
     };
   });
-  return { schemaVersion: 1 as const, count: items.length, items };
+  return { schemaVersion: 1 as const, scope, count: items.length, items };
 }
 
-export async function v1Daily(date: string | "latest") {
+export async function v1Daily(scope: ReportScope, date: string | "latest") {
   const [r] = date === "latest"
-    ? await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = 'daily' ORDER BY key DESC LIMIT 1`
-    : await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = 'daily' AND key = ${date}`;
+    ? await sql<ReportRow[]>`SELECT kind, scope, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = 'daily' AND scope = ${scope} ORDER BY key DESC LIMIT 1`
+    : await sql<ReportRow[]>`SELECT kind, scope, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = 'daily' AND scope = ${scope} AND key = ${date}`;
   if (!r) return null;
   const c = r.content;
   const raw = [...(c.sections ?? []).flatMap((s: any) => s.items ?? []), ...(c.flashes ?? [])];
   const avail = await availability([...new Set(raw.map((i: any) => i.itemId).filter(Boolean))] as string[]);
   const ok = (i: any) => !i.itemId || (avail.get(i.itemId)?.available ?? true);
   const links = (i: any) => ({ aihot: i.itemId ? itemUrl(i.itemId) : null, original: String(i.sourceUrl ?? "") });
-  const url = dailyUrl(r.key);
+  const url = dailyUrl(scope, r.key);
   return {
     schemaVersion: 1 as const,
     report: {
+      scope,
       date: r.key,
       generatedAt: r.generated_at.toISOString(),
       windowStart: r.window_start.toISOString(),
@@ -361,10 +376,10 @@ export function reportNavigation(kind: ReportKind, index: ReportIndexEntry[], ke
   }));
 }
 
-export async function loadReportNavigation(kind: ReportKind, key: string) {
-  return reportNavigation(kind, await listReports(kind), key);
+export async function loadReportNavigation(kind: ReportKind, scope: ReportScope, key: string) {
+  return reportNavigation(kind, await listReports(kind, scope), key);
 }
 
-export async function loadReportMonth(kind: ReportKind, month: string) {
-  return (await listReports(kind)).filter((e) => e.key.startsWith(month)).map(({ key, title }) => ({ key, title }));
+export async function loadReportMonth(kind: ReportKind, scope: ReportScope, month: string) {
+  return (await listReports(kind, scope)).filter((e) => e.key.startsWith(month)).map(({ key, title }) => ({ key, title }));
 }

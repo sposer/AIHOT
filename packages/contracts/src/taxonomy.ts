@@ -1,6 +1,19 @@
 // Public vocabularies shared by the website, the API and the worker. The categories themselves belong to
 // the industry pack (industry/taxonomy.ts); their keys are external identities (URLs, API, RSS).
-import { CATEGORIES } from "@aihot/industry/taxonomy";
+import { CATEGORIES, DOMAINS } from "@aihot/industry/taxonomy";
+
+export type DomainKey = (typeof DOMAINS)[number]["key"];
+export const DOMAIN_KEYS = DOMAINS.map((d) => d.key) as unknown as readonly [DomainKey, ...DomainKey[]];
+export const DOMAIN_LABELS = Object.fromEntries(DOMAINS.map((d) => [d.key, d.label])) as Record<DomainKey, string>;
+
+export function isDomainKey(value: unknown): value is DomainKey {
+  return typeof value === "string" && (DOMAIN_KEYS as readonly string[]).includes(value);
+}
+
+/** Stable order and one occurrence of each already-validated domain. */
+export function normalizeDomains(values: readonly DomainKey[]): DomainKey[] {
+  return DOMAIN_KEYS.filter((key) => values.includes(key));
+}
 
 export type CategoryKey = (typeof CATEGORIES)[number]["key"];
 export const CATEGORY_KEYS = CATEGORIES.map((c) => c.key) as unknown as readonly [CategoryKey, ...CategoryKey[]];

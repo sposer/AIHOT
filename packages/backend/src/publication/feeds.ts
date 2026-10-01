@@ -1,15 +1,17 @@
 // RSS feeds. GUID = article id (isPermaLink=false), <link> = the site's page, pubDate = source
 // publication time. Summary feeds never carry content:encoded; full feeds inline bodies only for
 // sources that explicitly allow redistribution. Titles come from the site's name and categories.
-import { CATEGORY_LABELS, PUBLIC_API_CATEGORY_KEYS, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
+import { CATEGORY_LABELS, DOMAIN_LABELS, PUBLIC_API_CATEGORY_KEYS, type DomainKey, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { SITE, withSubject } from "@aihot/industry/site";
 import { config } from "../config.ts";
+import type { ReportScope } from "@aihot/contracts/site";
+import { reportPath } from "@aihot/contracts/http-policy";
 import { sql } from "../db.ts";
 import { escapeXml } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { reportHeadline, reportIndex } from "./reports.ts";
 import { textToHtml } from "../content/sanitize.ts";
-import { categoryCondition, listedCondition, selectedCondition, xView, type ItemRow } from "./items.ts";
+import { categoryCondition, domainCondition, listedCondition, selectedCondition, xView, type ItemRow } from "./items.ts";
 import { dailyUrl, itemUrl, siteUrl } from "./links.ts";
 
 interface FeedMeta {
@@ -56,7 +58,7 @@ ${items.join("\n")}
 `;
 }
 
-type FeedRow = Pick<ItemRow, "id" | "title" | "summary" | "url" | "category" | "published_at" | "discovered_at" | "source_name"> &
+type FeedRow = Pick<ItemRow, "id" | "title" | "summary" | "url" | "domains" | "category" | "published_at" | "discovered_at" | "source_name"> &
   Partial<Pick<ItemRow, "channel" | "x_post" | "zh_text" | "quoted_zh" | "language" | "syndicate"> & {
     body_html: string | null; tr_html: string | null; tr_complete: boolean | null;
   }>;
@@ -90,6 +92,7 @@ function itemXml(r: FeedRow, includeContent: boolean): string {
   const description = `<p>${escapeXml(summary)}</p>\n<p>🔗 <a href="${escapeXml(r.url)}">阅读原文</a></p>\n<p>via ${escapeXml(SITE.name)} · <a href="${aihot}">${aihot}</a></p>`;
   const label = r.category ? CATEGORY_LABELS[r.category as PublicApiCategoryKey] : undefined;
   const category = label ? `\n      <category>${escapeXml(label)}</category>` : "";
+  const domains = r.domains.map((d) => `\n      <category domain="${escapeXml(siteUrl("/all"))}">${d}</category>`).join("");
   let content = "";
   if (includeContent && r.syndicate) {
     const html = fullContent(r, aihot);
@@ -99,7 +102,7 @@ function itemXml(r: FeedRow, includeContent: boolean): string {
   return `    <item>
       <title>${cdata(r.title)}</title>
       <link>${aihot}</link>
-      <description>${cdata(description)}</description>${content}${category}
+      <description>${cdata(description)}</description>${content}${category}${domains}
       <pubDate>${rfc822(pub)}</pubDate>
       <guid isPermaLink="false">${escapeXml(r.id)}</guid>
       <author>${AUTHOR} (${escapeXml(r.source_name)})</author>
@@ -111,7 +114,7 @@ export type ItemFeedKind = "selected" | "selected-full" | "all";
 // Like the live feeds, items are the newest by their original publish time (the pubDate shown):
 // 50 per feed; a category feed holds only its last 7 days (by original publish time).
 
-export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, now = new Date()): Promise<string> {
+export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, domain: DomainKey | null = null, now = new Date()): Promise<string> {
   const includeContent = kind === "selected-full";
   const scope = kind === "all"
     ? sql`${listedCondition(now)} AND p.eligible AND coalesce(p.published_at, p.discovered_at) > ${now}::timestamptz - interval '7 days'
@@ -120,10 +123,10 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
         ${category ? sql`AND coalesce(p.published_at, p.discovered_at) >= ${new Date(now.getTime() - 7 * 86400_000)}` : sql``}`;
   const rows = await sql<FeedRow[]>`
     WITH page AS MATERIALIZED (
-      SELECT p.article_id FROM publications p WHERE ${scope}
+      SELECT p.article_id FROM publications p WHERE ${scope} ${domainCondition(domain)}
       ORDER BY coalesce(p.published_at, p.discovered_at) DESC, p.article_id DESC LIMIT 50
     )
-    SELECT p.article_id AS id, p.title, p.summary, p.url, p.category, p.published_at, p.discovered_at, s.name AS source_name
+    SELECT p.article_id AS id, p.title, p.summary, p.url, p.domains, p.category, p.published_at, p.discovered_at, s.name AS source_name
       ${includeContent ? sql`, p.channel, p.syndicate, a.language, a.x_post,
         CASE WHEN p.channel = 'x' THEN tr.body_text END AS zh_text, qt.text_zh AS quoted_zh,
         a.body_html, tr.body_html AS tr_html, tr.complete AS tr_complete` : sql``}
@@ -148,29 +151,39 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
     const m = FEEDS[kind === "selected" ? "selected" : kind === "selected-full" ? "selectedFull" : "all"];
     meta = { title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes };
   }
+  if (domain) {
+    meta.title += ` · ${DOMAIN_LABELS[domain]}`;
+    meta.description = `${DOMAIN_LABELS[domain]}领域。${meta.description}`;
+    meta.homePath = `/all/${domain}`;
+    meta.selfPath += `?domain=${domain}`;
+  }
   return channel(meta, rows.map((r) => itemXml(r, includeContent)));
 }
 
-export async function dailyFeed(): Promise<string> {
-  const index = await reportIndex("daily");
+export async function dailyFeed(scope: ReportScope): Promise<string> {
+  const index = await reportIndex("daily", scope);
   const rows = index.rows.slice(0, 30);
   const m = FEEDS.daily;
+  const name = withSubject("日报", scope === "all" ? "" : DOMAIN_LABELS[scope]);
   const gone = index.gone;
   const items = rows.map((r) => {
-    const url = dailyUrl(r.key);
+    const url = dailyUrl(scope, r.key);
     const lead = reportHeadline(r.content, "daily", gone);
-    const title = lead ? `${SITE.name} ${withSubject("日报")} · ${r.key} — ${lead}` : `${SITE.name} ${withSubject("日报")} · ${r.key}`;
+    const title = lead ? `${SITE.name} ${name} · ${r.key} — ${lead}` : `${SITE.name} ${name} · ${r.key}`;
     const description = `<p>${escapeXml(r.content.lead?.leadParagraph ?? lead ?? "")} — 点击查看完整日报</p>\n<p>via ${escapeXml(SITE.name)} · <a href="${url}">${url}</a></p>`;
     return `    <item>
       <title>${cdata(title)}</title>
       <link>${url}</link>
       <description>${cdata(description)}</description>
       <pubDate>${rfc822(r.generated_at)}</pubDate>
-      <guid isPermaLink="false">daily-${escapeXml(r.key)}</guid>
+      <guid isPermaLink="false">daily-${scope}-${escapeXml(r.key)}</guid>
       <author>${AUTHOR} (${escapeXml(SITE.name)})</author>
     </item>`;
   });
-  return channel({ title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes }, items);
+  return channel({
+    title: `${SITE.name} ${name}`, description: `${SITE.name} 每天 08:00 北京时间发布的${name}，保留最近 30 期。`,
+    homePath: reportPath("daily", scope), selfPath: `${m.path}${scope === "all" ? "" : `?domain=${scope}`}`, ttl: m.pollHintMinutes,
+  }, items);
 }
 
 export function isFeedCategory(v: string): v is PublicApiCategoryKey {

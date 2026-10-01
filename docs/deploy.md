@@ -57,7 +57,11 @@ docker compose --env-file .env --env-file images.env exec -T web \
 
 `scripts/migrate.ts` 按编号顺序执行 SQL，每份迁移和它的 `schema_migrations` 记录在同一事务中提交，已执行的文件不会重跑。`setup` 完成迁移和 seed 后，API 和 worker 才启动。
 
-首次真实部署后固定初始基线，后续数据库变更只在 `database/migrations/` 末尾按编号追加向后兼容的增量迁移。
+首次真实部署后固定初始基线，后续数据库变更只在 `database/migrations/` 末尾按编号追加增量迁移；变更的当前应用契约与迁移一起部署，不修改已执行的基线。
+
+`0002_domains.sql` 将既有信源、分析、公开投影及精选同步 payload 一次性赋为 AI，文章的新归属由现有结构化步骤产出，人工纠正由 editorial override 持有。信源的 `domains` 只说明覆盖范围，不决定文章归属。日报、周报和月报改为 `(kind, scope, key)` 唯一身份：既有报告属于 `ai`，历史修订仍通过原 `report_id` 关联；`all` 概览不复制 AI 报告，由同一报告生产与补报路径独立生成。完成迁移后应用只读写这一套契约，报告详情使用 `/:kind/:scope/:key`。
+
+部署这次变更前由部署方暂停旧 API 和 worker 并保留数据库快照，再执行 setup、新应用及验证。需要退回旧应用时，由部署方恢复部署前数据库快照和上一版消费文件，不能只换回旧镜像：旧应用只认识 `(kind, key)`，无法正确处理迁移后的多范围报告。恢复快照会舍弃快照之后的写入，部署方应先保留这段数据供核对。
 
 ### 在中国大陆的服务器上
 

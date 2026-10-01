@@ -3,7 +3,7 @@
 // pages follow the site's rule, an early release keeps the selected ledger in order, a withdrawal
 // waiting behind an unreleased item leaves new snapshots at once, and snapshots answer conditional requests.
 import { config } from "@aihot/backend/config";
-import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
+import { CATEGORY_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
 import { beijingDate } from "@aihot/contracts/time";
 import { ogEtag } from "../apps/api/src/og/render.ts";
 import { posterEtag } from "../apps/api/src/og/poster.ts";
@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
-import { setVisibility } from "@aihot/backend/admin/content";
+import { setVisibility, overrideFields } from "@aihot/backend/admin/content";
 import { updateSource } from "@aihot/backend/admin/sources";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
@@ -35,7 +35,7 @@ before(async () => {
             VALUES (${SOURCE}, 'Test publication', 'rss', 'T1', 'editorial', true, true, '2100-01-01')`;
 });
 after(async () => {
-  await sql`DELETE FROM reports WHERE kind = 'daily' AND key = ${REPORT_KEY}`;
+  await sql`DELETE FROM reports WHERE kind = 'daily' AND scope = 'all' AND key = ${REPORT_KEY}`;
   await app.close();
   await stopBoss();
   await closeDb();
@@ -43,13 +43,13 @@ after(async () => {
 
 let n = 0;
 /** A selected article with full text and a summary. */
-async function article(): Promise<string> {
+async function article(domains: DomainKey[] = ["ai"], score = 90): Promise<string> {
   n += 1;
   const { articleId } = await upsertMaterial({
     sourceId: SOURCE, url: `https://example.com/${T}-${n}`, title: `Test ${n}`, bodyText: BODY, bodyHtml: `<p>${BODY}</p>`, bodyStatus: "ok", via: "fetch", publishedAt: new Date(),
   });
-  await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
-            VALUES (${articleId}, 1, 'rule', 'pass', 'ai-models', ${`标题${n}-${T}`}, ${`SUMMARY-${n}-${T}`}, '理由', 90, true)`;
+  await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, domains, category, title_zh, summary_zh, reason_zh, score, selected)
+            VALUES (${articleId}, 1, 'rule', 'pass', ${domains}, 'ai-models', ${`标题${n}-${T}`}, ${`SUMMARY-${n}-${T}`}, '理由', ${score}, true)`;
   return articleId;
 }
 
@@ -125,9 +125,9 @@ test("a withdrawn item leaves every report exit", async () => {
     sections: [{ label: "模型", items: [{ itemId: id, title: `LEAD-${T}`, summary: `QUOTED-${T}`, sourceUrl: `https://example.com/original-${T}`, sourceName: "Test" }] }],
     flashes: [],
   };
-  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, origin)
-            VALUES ('daily', ${REPORT_KEY}, now() - interval '1 day', now(), ${sql.json(content as never)}, now(), 'manual')
-            ON CONFLICT (kind, key) DO UPDATE SET content = EXCLUDED.content`;
+  await sql`INSERT INTO reports (kind, scope, key, window_start, window_end, content, generated_at, origin)
+            VALUES ('daily', 'all', ${REPORT_KEY}, now() - interval '1 day', now(), ${sql.json(content as never)}, now(), 'manual')
+            ON CONFLICT (kind, scope, key) DO UPDATE SET content = EXCLUDED.content`;
   assert.ok((await get(`/api/v1/dailies/${REPORT_KEY}`)).body.includes(`QUOTED-${T}`), "the report quotes the item before");
 
   await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
@@ -193,8 +193,8 @@ test("item pages follow the live rule: unsummarised editorial items keep one, ho
   const { articleId: plain } = await material(SOURCE, "plain");
   await publishArticle(plain);
   const { articleId: signal } = await material(SIGNAL, "signal");
-  await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, score, selected)
-            VALUES (${signal}, 1, 'replay', 'pass', 'industry', ${`信号-${T}`}, ${`SIGNAL-SUMMARY-${T}`}, 80, false)`;
+  await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, domains, category, title_zh, summary_zh, score, selected)
+            VALUES (${signal}, 1, 'replay', 'pass', ARRAY['ai'], 'industry', ${`信号-${T}`}, ${`SIGNAL-SUMMARY-${T}`}, 80, false)`;
   await publishArticle(signal);
 
   const page = await get(`/api/site/items/${plain}`);
@@ -351,7 +351,7 @@ test("minimal sync projection preserves snapshot fields, pagination bindings and
   const full = JSON.parse((await get('/api/v1/selected/snapshot?fields=default&limit=1000')).body);
   const minimal = JSON.parse((await get('/api/v1/selected/snapshot?fields=minimal&limit=1000')).body);
   const project = (i: any) => ({ id: i.id, title: i.title, source: i.source, publishedAt: i.publishedAt,
-    discoveredAt: i.discoveredAt, category: i.category, score: i.score, selected: i.selected, links: { aihot: i.links.aihot } });
+    discoveredAt: i.discoveredAt, domains: i.domains, category: i.category, score: i.score, selected: i.selected, links: { aihot: i.links.aihot } });
   assert.deepEqual(minimal.items, full.items.map(project));
   assert.ok(minimal.items.some((i: any) => i.id === id));
   for (const fields of ['default', 'minimal']) {
@@ -383,4 +383,57 @@ test("minimal sync projection preserves snapshot fields, pagination bindings and
   await setVisibility(id, { visibility: 'withdrawn', reason: 'sync test', version: 0 }, 'test');
   const removed = await getChanges(minimalChanges.cursor);
   assert.ok(removed.changes.some((c: any) => c.op === 'remove' && c.id === id));
+});
+
+
+test("domain filtering precedes fact representative choice and preserves the global group", async () => {
+  const ai = await article(["ai"], 95);
+  const medical = await article(["medical"], 80);
+  const story = await storyFor(medical);
+  const [fact] = await sql<{ id: number; public_id: string }[]>`SELECT f.id, f.public_id FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id WHERE fa.article_id = ${medical}`;
+  await sql`INSERT INTO fact_articles (fact_id, article_id, role) VALUES (${fact!.id}, ${ai}, 'report')`;
+  await publishArticle(ai, released());
+  await publishArticle(medical, released());
+  const overview = JSON.parse((await get("/api/site/timeline")).body).cards;
+  const scoped = JSON.parse((await get("/api/site/timeline?domain=medical")).body).cards;
+  const allCard = overview.find((c: any) => c.group?.factId === fact!.public_id);
+  const medicalCard = scoped.find((c: any) => c.key === allCard?.key);
+  assert.ok(allCard && medicalCard);
+  assert.equal(overview.filter((c: any) => c.group?.factId === fact!.public_id).length, 1);
+  assert.equal(allCard.item.id, ai);
+  assert.equal(medicalCard.item.id, medical);
+  assert.deepEqual(medicalCard.item.domains, ["medical"]);
+  assert.equal(medicalCard.key, allCard.key);
+  const medicalDetail = JSON.parse((await get(`/api/site/items/${medical}`)).body);
+  assert.equal(medicalDetail.story.publicId, story);
+  assert.equal(allCard.group.story.publicId, medicalDetail.story.publicId);
+  const expanded = JSON.parse((await get(`/api/site/groups/${fact!.public_id}/reports?domain=medical`)).body);
+  assert.deepEqual(expanded.reports.map((r: any) => r.id), [medical]);
+});
+
+
+test("every global upsert updates domain membership; remove only means global withdrawal", async () => {
+  const id = await article(["medical"]);
+  await publishArticle(id, released());
+  const full = JSON.parse((await get("/api/v1/selected/snapshot")).body);
+  const minimal = JSON.parse((await get("/api/v1/selected/snapshot?fields=minimal")).body);
+  assert.deepEqual(full.items.find((i: any) => i.id === id).domains, ["medical"]);
+  assert.deepEqual(minimal.items.find((i: any) => i.id === id).domains, ["medical"]);
+  let version = 0;
+  let cursor = minimal.cursor;
+  for (const domains of [["medical", "policy"], ["ai"]]) {
+    await overrideFields(id, { fields: { domains }, reason: "test domain correction", version: version++ }, "test");
+    const delta = JSON.parse((await get(`/api/v1/selected/changes?cursor=${encodeURIComponent(cursor)}`)).body);
+    const ours = delta.changes.filter((c: any) => (c.item?.id ?? c.id) === id);
+    assert.equal(ours.length, 1);
+    assert.equal(ours[0].op, "upsert");
+    assert.deepEqual(ours[0].item.domains, domains);
+    cursor = delta.cursor;
+  }
+  const scoped = JSON.parse((await get("/api/v1/items?domain=medical")).body);
+  assert.ok(!scoped.items.some((i: any) => i.id === id));
+  await setVisibility(id, { visibility: "withdrawn", reason: "test withdrawal", version }, "test");
+  const delta = JSON.parse((await get(`/api/v1/selected/changes?cursor=${encodeURIComponent(cursor)}`)).body);
+  assert.deepEqual(delta.changes.filter((c: any) => c.id === id).map((c: any) => c.op), ["remove"]);
+  assert.equal((await get("/api/v1/selected/snapshot?domain=medical")).status, 400);
 });

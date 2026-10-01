@@ -1,15 +1,18 @@
-// RSS routes. Unknown query parameters are accepted and never change content.
+// RSS routes. Optional domain scopes the feed; unknown query parameters never change content.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { RSS_CACHE_CONTROL } from "@aihot/contracts/http-policy";
 import { dailyFeed, isFeedCategory, itemFeed, type ItemFeedKind } from "@aihot/backend/publication/feeds";
-import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
+import { domainParam } from "./v1.ts";
+import { looseQuery, applyPublicHeaders, sendTextWithEtag, QueryError, sendProblem } from "../http/respond.ts";
 
 async function sendFeed(req: FastifyRequest, reply: FastifyReply, xml: string) {
   applyPublicHeaders(reply, { cors: false });
   return sendTextWithEtag(req, reply, xml, { etagPrefix: "rss", cacheControl: RSS_CACHE_CONTROL, contentType: "application/rss+xml; charset=utf-8" });
 }
 
-function feedError(reply: FastifyReply) {
+function feedError(req: FastifyRequest, reply: FastifyReply, error: unknown) {
+  if (error instanceof QueryError) return sendProblem(req, reply, { status: 400, code: "invalid_query", detail: error.message });
+  req.log.error({ err: error }, "feed error");
   return reply.code(503).header("Retry-After", "60").header("Cache-Control", "no-store").type("text/plain; charset=utf-8").send("Feed temporarily unavailable");
 }
 
@@ -20,10 +23,9 @@ export function registerFeeds(app: FastifyInstance) {
   }
   const item = (kind: ItemFeedKind) => async (req: FastifyRequest, reply: FastifyReply) => {
     try {
-      return await sendFeed(req, reply, await itemFeed(kind, null));
+      return await sendFeed(req, reply, await itemFeed(kind, null, domainParam(looseQuery(req).domain)));
     } catch (error) {
-      req.log.error({ err: error }, "feed error");
-      return feedError(reply);
+      return feedError(req, reply, error);
     }
   };
   app.get("/feed.xml", item("selected"));
@@ -31,10 +33,9 @@ export function registerFeeds(app: FastifyInstance) {
   app.get("/feed/all.xml", item("all"));
   app.get("/feed/daily.xml", async (req, reply) => {
     try {
-      return await sendFeed(req, reply, await dailyFeed());
+      return await sendFeed(req, reply, await dailyFeed(domainParam(looseQuery(req).domain) ?? "all"));
     } catch (error) {
-      req.log.error({ err: error }, "feed error");
-      return feedError(reply);
+      return feedError(req, reply, error);
     }
   });
   for (const full of [false, true]) {
@@ -43,10 +44,9 @@ export function registerFeeds(app: FastifyInstance) {
       const slug = file.replace(/\.xml$/, "");
       if (!file.endsWith(".xml") || !isFeedCategory(slug)) return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
       try {
-        return await sendFeed(req, reply, await itemFeed(full ? "selected-full" : "selected", slug));
+        return await sendFeed(req, reply, await itemFeed(full ? "selected-full" : "selected", slug, domainParam(looseQuery(req).domain)));
       } catch (error) {
-        req.log.error({ err: error }, "feed error");
-        return feedError(reply);
+        return feedError(req, reply, error);
       }
     });
   }

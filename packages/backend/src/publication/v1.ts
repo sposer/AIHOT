@@ -1,13 +1,14 @@
 // v1 items and the selected sync (snapshot + changes), read from the same public read layer.
-import type { PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
+import type { DomainKey, PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { sql, type Db } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import { newShortId } from "../lib/ids.ts";
-import { categoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, listedCondition, selectedCondition, type ApiItemRow } from "./items.ts";
+import { categoryCondition, domainCondition, API_ITEM_COLUMNS, API_ITEM_FROM, listedCondition, selectedCondition, type ApiItemRow } from "./items.ts";
 import { publicMatchCondition, searchTerms, withSearchCapacity } from "./pool.ts";
 import { v1Payload, type V1ItemPayload } from "./publish.ts";
 
 export interface V1ItemsQuery {
+  domain?: DomainKey | null;
   mode: "selected" | "all";
   window: "24h" | "7d";
   by: "timeline" | "published";
@@ -19,7 +20,7 @@ export interface V1ItemsQuery {
 
 export interface V1ItemsResult {
   schemaVersion: 1;
-  query: { mode: string; category: string | null; window: string; q: string | null; by: string; ordering: string };
+  query: { domain: DomainKey | null; mode: string; category: string | null; window: string; q: string | null; by: string; ordering: string };
   items: V1ItemPayload[];
   page: { count: number; hasMore: boolean; nextCursor: string | null };
 }
@@ -27,7 +28,7 @@ export interface V1ItemsResult {
 export function rowToV1(row: ApiItemRow): V1ItemPayload {
   return v1Payload({
     articleId: row.id, title: row.title, originalTitle: row.original_title, summary: row.summary, sourceName: row.source_name,
-    url: row.url, publishedAt: row.published_at, discoveredAt: row.discovered_at, category: row.category,
+    url: row.url, publishedAt: row.published_at, discoveredAt: row.discovered_at, category: row.category, domains: row.domains,
     score: row.score === null ? null : Number(row.score), selected: row.selected, reason: row.reason,
   });
 }
@@ -35,7 +36,7 @@ export function rowToV1(row: ApiItemRow): V1ItemPayload {
 export async function v1Items(query: V1ItemsQuery, now = new Date()): Promise<V1ItemsResult> {
   const windowMs = query.window === "24h" ? 86400000 : 7 * 86400000;
   const windowStart = new Date(now.getTime() - windowMs);
-  const binding = queryBinding({ m: query.mode, w: query.window, b: query.by, c: query.category, q: query.q });
+  const binding = queryBinding({ d: query.domain ?? null, m: query.mode, w: query.window, b: query.by, c: query.category, q: query.q });
   // by=timeline is the site's own order: a selected item at its reading-group anchor, anything else at its timeline time.
   const sortCol = query.by === "published" ? sql`coalesce(p.published_at, p.discovered_at)` : query.mode === "selected" ? sql`p.sort_at` : sql`p.timeline_at`;
   let after: { a: number; i: string } | null = null;
@@ -51,7 +52,7 @@ export async function v1Items(query: V1ItemsQuery, now = new Date()): Promise<V1
 
   const run = (db: Db) => db<(ApiItemRow & { sort_at: Date })[]>`
     SELECT ${API_ITEM_COLUMNS}, ${sortCol} AS sort_at ${API_ITEM_FROM}
-    WHERE ${scope} ${categoryCondition(query.category, true)} ${publicMatchCondition(terms)}
+    WHERE ${scope} ${domainCondition(query.domain)} ${categoryCondition(query.category, true)} ${publicMatchCondition(terms)}
       AND ${sortCol} >= ${windowStart} AND ${sortCol} <= ${now}
       ${after ? sql`AND (${sortCol}, p.article_id) < (${new Date(after.a)}, ${after.i})` : sql``}
     ORDER BY ${sortCol} DESC, p.article_id DESC
@@ -64,7 +65,7 @@ export async function v1Items(query: V1ItemsQuery, now = new Date()): Promise<V1
   return {
     schemaVersion: 1,
     query: {
-      mode: query.mode, category: query.category, window: query.window, q: query.q, by: query.by,
+      domain: query.domain ?? null, mode: query.mode, category: query.category, window: query.window, q: query.q, by: query.by,
       ordering: query.by === "published" ? "publishedAtDesc" : "timelineDesc",
     },
     items: page.map(rowToV1),
@@ -79,6 +80,7 @@ export async function v1Items(query: V1ItemsQuery, now = new Date()): Promise<V1
 // ---------------------------------------------------------------------------
 // Selected sync
 // ---------------------------------------------------------------------------
+// decision: 快照和增量保留全局完整流；not 按领域过滤增量 because 文章跨域归属变化需要同一个 upsert 更新所有领域集合，remove 只表示全局撤回。
 
 export class SnapshotRequiredError extends Error {}
 
@@ -108,7 +110,7 @@ export async function effectiveWatermark(now = new Date()): Promise<number> {
 function minimalOf(item: V1ItemPayload) {
   return {
     id: item.id, title: item.title, source: item.source, publishedAt: item.publishedAt, discoveredAt: item.discoveredAt,
-    category: item.category, score: item.score, selected: item.selected, links: { aihot: item.links.aihot },
+    category: item.category, domains: item.domains, score: item.score, selected: item.selected, links: { aihot: item.links.aihot },
   };
 }
 

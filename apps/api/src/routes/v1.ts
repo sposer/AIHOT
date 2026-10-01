@@ -2,7 +2,7 @@
 import { FEATURES } from "@aihot/industry/features";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { V1_CACHE_CONTROL } from "@aihot/contracts/http-policy";
-import { PUBLIC_API_CATEGORY_KEYS, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
+import { DOMAIN_KEYS, PUBLIC_API_CATEGORY_KEYS, type DomainKey, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { InvalidCursorError } from "@aihot/backend/lib/cursor";
 import { SearchBusyError } from "@aihot/backend/publication/pool";
 import { selectedChanges, selectedSnapshot, SnapshotRequiredError, v1Items } from "@aihot/backend/publication/v1";
@@ -28,6 +28,10 @@ export function enumParam<T extends string>(value: string | undefined, name: str
     throw new QueryError(allowed.length === 2 ? `${name} must be '${allowed[0]}' or '${allowed[1]}'.` : `${name} must be one of: ${allowed.join(", ")}.`);
   }
   return value as T;
+}
+
+export function domainParam(value: string | undefined): DomainKey | null {
+  return value === undefined ? null : enumParam(value, "domain", DOMAIN_KEYS, "ai");
 }
 
 /** Wraps a v1 handler with shared error mapping. Errors never leak internals. */
@@ -58,7 +62,7 @@ export function publicHandler(fn: Handler): Handler {
 
 export function registerV1(app: FastifyInstance) {
   app.get("/api/v1/items", publicHandler(async (req, reply) => {
-    const q = strictQuery(req, ["mode", "category", "window", "by", "q", "limit", "cursor"]);
+    const q = strictQuery(req, ["domain", "mode", "category", "window", "by", "q", "limit", "cursor"]);
     const mode = enumParam(q.mode, "mode", ["selected", "all"] as const, "selected");
     const window = enumParam(q.window, "window", ["24h", "7d"] as const, "7d");
     const by = enumParam(q.by, "by", ["timeline", "published"] as const, "timeline");
@@ -71,7 +75,7 @@ export function registerV1(app: FastifyInstance) {
     }
     const limit = intParam(q.limit, "limit", 1, 100, 50);
     if (q.cursor !== undefined && q.cursor.length === 0) throw new InvalidCursorError("empty cursor");
-    const body = await v1Items({ mode, window, by, category, q: search, limit, cursor: q.cursor ?? null });
+    const body = await v1Items({ domain: domainParam(q.domain), mode, window, by, category, q: search, limit, cursor: q.cursor ?? null });
     return sendJsonWithEtag(req, reply, body, { etagPrefix: "v1-items", cacheControl: V1_CACHE_CONTROL.items });
   }));
 
@@ -97,23 +101,23 @@ export function registerV1(app: FastifyInstance) {
   }));
 
   app.get("/api/v1/dailies", publicHandler(async (req, reply) => {
-    const q = strictQuery(req, ["limit"]);
+    const q = strictQuery(req, ["domain", "limit"]);
     const limit = intParam(q.limit, "limit", 1, 180, 30);
-    return sendJsonWithEtag(req, reply, await v1Dailies(limit), { etagPrefix: "v1-dailies", cacheControl: V1_CACHE_CONTROL.dailies });
+    return sendJsonWithEtag(req, reply, await v1Dailies(domainParam(q.domain) ?? "all", limit), { etagPrefix: "v1-dailies", cacheControl: V1_CACHE_CONTROL.dailies });
   }));
 
   app.get("/api/v1/dailies/latest", publicHandler(async (req, reply) => {
-    strictQuery(req, []);
-    const body = await v1Daily("latest");
+    const q = strictQuery(req, ["domain"]);
+    const body = await v1Daily(domainParam(q.domain) ?? "all", "latest");
     if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "No daily report has been published yet." });
     return sendJsonWithEtag(req, reply, body, { etagPrefix: "v1-daily", cacheControl: V1_CACHE_CONTROL.latestDaily });
   }));
 
   app.get("/api/v1/dailies/:date", publicHandler(async (req, reply) => {
-    strictQuery(req, []);
+    const q = strictQuery(req, ["domain"]);
     const date = (req.params as { date: string }).date;
     if (!isValidDate(date)) throw new QueryError("date must be a real YYYY-MM-DD calendar date.");
-    const body = await v1Daily(date);
+    const body = await v1Daily(domainParam(q.domain) ?? "all", date);
     if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `No daily report exists for ${date}.`, cacheControl: "public, max-age=60" });
     return sendJsonWithEtag(req, reply, body, { etagPrefix: "v1-daily", cacheControl: V1_CACHE_CONTROL.dailyByDate });
   }));

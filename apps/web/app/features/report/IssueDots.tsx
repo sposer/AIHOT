@@ -5,15 +5,15 @@
 // to the same issues.
 import { useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router";
-import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
-import { KIND_PATH, periodGrid } from "./format";
+import type { ReportNavigationEntry, ReportKind, ReportScope } from "@aihot/contracts/site";
+import { reportPath, periodGrid } from "./format";
 
 const ROW = 20;
 const TAU = Math.PI * 2;
 const INTRO_MS = 700;
 const easeOutBack = (p: number) => 1 + 2.2 * (p - 1) ** 3 + 1.2 * (p - 1) ** 2;
 
-export function IssueDots({ kind, reportKey, index, className = "" }: { kind: ReportKind; reportKey: string; index: ReportNavigationEntry[]; className?: string }) {
+export function IssueDots({ kind, scope, reportKey, index, className = "" }: { kind: ReportKind; scope: ReportScope; reportKey: string; index: ReportNavigationEntry[]; className?: string }) {
   const grid = useMemo(() => periodGrid(kind, reportKey, index), [kind, reportKey, index]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const navigate = useNavigate();
@@ -114,7 +114,7 @@ export function IssueDots({ kind, reportKey, index, className = "" }: { kind: Re
     };
     const onClick = (e: MouseEvent) => {
       const c = cells[cellAt(e)];
-      if (c?.key && c.state === "issue") navigate(`${KIND_PATH[kind]}/${c.key}`);
+      if (c?.key && c.state === "issue") navigate(reportPath(kind, scope, c.key));
     };
 
     const resize = new ResizeObserver(() => {
@@ -148,7 +148,7 @@ export function IssueDots({ kind, reportKey, index, className = "" }: { kind: Re
       canvas.removeEventListener("pointerleave", onLeave);
       canvas.removeEventListener("click", onClick);
     };
-  }, [grid, rows, kind, navigate]);
+  }, [grid, rows, kind, scope, navigate]);
 
   return (
     <div className={className}>

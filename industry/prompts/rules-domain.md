@@ -1,7 +1,9 @@
 
-【AI 领域翻译规则 — 本平台 100% 是 AI/ML/LLM 行业内容，严格遵守】
+【跨领域术语规则 — 按原文上下文判断】
 
-1. 歧义默认值：以下词在中文有非 AI 歧义，**一律按 AI 含义翻译**：
+本站收录 AI、医疗、法律、军事和公共政策。术语含义由当前材料的学科、句子和原文定义决定，不由站点或信源覆盖领域决定。原文不足以消除歧义时保留原词，不补造含义。
+
+1. 以下对应只适用于明确的 AI/ML/LLM 语境：
    - LLM = 大语言模型（绝不译"法学硕士"/"Master of Laws"）
    - Token / tokens = 模型 token（保留英文；绝不译"代币"/"令牌"）
    - Transformer = Transformer 架构（保留英文；不译"变压器"）
@@ -19,14 +21,16 @@
    - Prompt = 提示词
    - Skill / Skills = 技能（Claude 等 Agent 框架的能力包，不译"特长"）
 
-2. 以下专有名词**一律保留英文原文**，不翻译不加中文括注：
+   法律学位中的 LLM 可以指法学硕士；Agent 在法律中可以指代理人，在药理中可以指药剂；Token 在其他上下文可以指令牌或代币；Diffusion 可以指物理扩散。医学模型、统计推断、军事型号不因包含 model、inference 或 model number 就变成 AI 模型、模型推理或版本。保留原文明确限定的对象和含义。
+
+2. 专有名词保留可识别的原名和代号，缩写按原文所在学科理解，不自动扩写。以下是 AI 与技术语境的示例；中国品牌按第 3 条：
    - AI 公司：OpenAI / Anthropic / Google DeepMind / xAI / Meta AI / Mistral / DeepSeek / Cohere / HuggingFace（HF）/ Runway / ElevenLabs / Suno / Pika / Midjourney / Perplexity
    - 模型族（举例 + 通用规则）：GPT / Claude / Gemini / Llama / Qwen / Grok / o 系列 / DeepSeek / Mistral / Mixtral / Phi / Sora / Veo / Imagen
      **规则**：任何大模型族名、产品代号一律保留英文
    - 模型版本号（举例 + 通用规则）：GPT-5 / Claude 4.7 / Claude Sonnet 4.6 / Llama 4 / Gemini 3 / o3 / o4 / DeepSeek-V4 / Qwen3.7
      **规则**：版本号一字不改（包括字母数字后缀如 4o / 4.7 / 405B / V4 / R1），绝不"翻译性扩写"（不要把 "405B" 译成 "4050 亿"，不要把 "V4" 译成 "第 4 代"）
    - 技术缩写（举例 + 通用规则）：LLM / RAG / RLHF / DPO / LoRA / QLoRA / PEFT / MoE / CoT / ReAct / KV cache / SOTA / AGI / MCP / ADK / NPU / GPU / TPU
-     **规则**：任何 2-5 字母的全大写缩写，默认按 AI/ML 含义保留英文
+     **规则**：缩写保留原文，按材料实际所在学科理解；医学、法律、军事缩写不默认按 AI/ML 解释
    - 评测基准（举例 + 通用规则）：MMLU / GPQA / HumanEval / SWE-bench / SWE-bench Verified / AIME / HLE / ARC-AGI / ARC-AGI 2 / MT-Bench / Chatbot Arena / Aider Polyglot / LiveCodeBench
      **规则**：以 -bench / -eval 结尾或全大写的评测名一律保留英文
    - AI 工具/产品：Cursor / Copilot / Codex / Aider / Devin / Cline / Claude Code / Windsurf / Zed / v0 / Bolt / Lovable / Replit Agent

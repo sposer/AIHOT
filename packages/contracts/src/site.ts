@@ -1,6 +1,6 @@
 // First-party site API (/api/site/*). Not a public API: it may evolve with the website,
 // but it is served from the same public read layer as v1, RSS and MCP.
-import type { CategoryKey, ChannelKey } from "./taxonomy.ts";
+import { DOMAIN_KEYS, type CategoryKey, type ChannelKey, type DomainKey } from "./taxonomy.ts";
 
 export type SourceKind = "rss" | "web_list" | "json_list" | "x_search" | "mp_account" | "external";
 
@@ -53,6 +53,7 @@ export interface ItemSummary {
   discoveredAt: string;
   timelineAt: string;
   category: CategoryKey | null;
+  domains: DomainKey[];
   tags: string[];
   score: number | null;
   selected: boolean;
@@ -62,7 +63,7 @@ export interface ItemSummary {
 }
 
 /** The fields rendered by a site feed card; full original text lives in the item detail. */
-export interface FeedItemSummary extends Pick<ItemSummary, "id" | "title" | "summary" | "reason" | "publishedAt" | "timelineAt" | "category" | "tags" | "score" | "selected" | "channel"> {
+export interface FeedItemSummary extends Pick<ItemSummary, "id" | "title" | "summary" | "reason" | "publishedAt" | "timelineAt" | "category" | "domains" | "tags" | "score" | "selected" | "channel"> {
   source: Pick<SourceRef, "name">;
   x: (Pick<XPostView, "authorName" | "handle" | "avatarUrl" | "avatarSrcSet" | "media"> & {
     quoted: Omit<NonNullable<XPostView["quoted"]>, "url"> | null;
@@ -101,6 +102,7 @@ export interface HotStripEntry {
 }
 
 export interface TimelineFilters {
+  domain?: DomainKey | null;
   channel: ChannelKey;
   category: CategoryKey | null;
   tag: string | null;
@@ -297,6 +299,12 @@ export interface StoryDetail {
 // ---------------------------------------------------------------------------
 
 export type ReportKind = "daily" | "weekly" | "monthly";
+export const REPORT_SCOPES = ["all", ...DOMAIN_KEYS] as const;
+export type ReportScope = (typeof REPORT_SCOPES)[number];
+
+export function isReportScope(value: unknown): value is ReportScope {
+  return typeof value === "string" && (REPORT_SCOPES as readonly string[]).includes(value);
+}
 
 export interface ReportCitation {
   itemId: string | null;
@@ -318,6 +326,7 @@ export interface ReportCitation {
 
 export interface ReportDetail {
   kind: ReportKind;
+  scope: ReportScope;
   key: string;
   title: string;
   windowStart: string;
@@ -344,6 +353,7 @@ export interface ReportDetail {
 }
 
 export interface ReportIndexEntry {
+  scope: ReportScope;
   key: string;
   title: string | null;
   generatedAt: string;

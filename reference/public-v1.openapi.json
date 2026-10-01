@@ -19,7 +19,7 @@
     "/api/v1/items": {
       "get": {
         "operationId": "items",
-        "summary": "List recent public AI items",
+        "summary": "List recent public items",
         "description": "Start here for feeds, widgets and 'what is new' views. Covers the last 7 days only. Send If-None-Match and you get a 304 with an empty body whenever nothing changed. Do not use this to maintain a complete local copy of the selected set: it is windowed, so anything older than 7 days silently falls out. Use /api/v1/selected/snapshot plus /api/v1/selected/changes for that.",
         "parameters": [
           {
@@ -27,6 +27,9 @@
           },
           {
             "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Domain"
           },
           {
             "name": "mode",
@@ -925,6 +928,9 @@
             "$ref": "#/components/parameters/IfNoneMatch"
           },
           {
+            "$ref": "#/components/parameters/Domain"
+          },
+          {
             "name": "limit",
             "in": "query",
             "schema": {
@@ -1252,6 +1258,9 @@
           },
           {
             "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Domain"
           }
         ]
       }
@@ -1267,6 +1276,9 @@
           },
           {
             "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Domain"
           },
           {
             "name": "date",
@@ -1845,6 +1857,14 @@
   },
   "components": {
     "parameters": {
+      "Domain": {
+        "name": "domain",
+        "in": "query",
+        "description": "Optional domain, independent of category. Omit for the overview.",
+        "schema": {
+          "$ref": "#/components/schemas/Domain"
+        }
+      },
       "ActorUserAgent": {
         "name": "User-Agent",
         "in": "header",
@@ -1867,6 +1887,24 @@
       }
     },
     "schemas": {
+      "Domain": {
+        "type": "string",
+        "enum": ["ai", "medical", "legal", "military", "policy"]
+      },
+      "Domains": {
+        "type": "array",
+        "maxItems": 5,
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/components/schemas/Domain"
+        },
+        "description": "All evidenced article domains, independent of category and source coverage."
+      },
+      "ReportScope": {
+        "type": "string",
+        "enum": ["all", "ai", "medical", "legal", "military", "policy"],
+        "description": "all is the overview scope, not an article domain."
+      },
       "CodexResetContextPost": {
         "type": "object",
         "required": [
@@ -2493,6 +2531,7 @@
           "links",
           "publishedAt",
           "discoveredAt",
+          "domains",
           "category",
           "score",
           "selected"
@@ -2555,6 +2594,9 @@
             "type": "string",
             "format": "date-time"
           },
+          "domains": {
+            "$ref": "#/components/schemas/Domains"
+          },
           "category": {
             "type": [
               "string",
@@ -2597,6 +2639,7 @@
           "links",
           "publishedAt",
           "discoveredAt",
+          "domains",
           "category",
           "score",
           "selected"
@@ -2641,6 +2684,9 @@
           "discoveredAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "domains": {
+            "$ref": "#/components/schemas/Domains"
           },
           "category": {
             "type": [
@@ -2706,6 +2752,7 @@
             "type": "object",
             "required": [
               "mode",
+              "domain",
               "category",
               "window",
               "q",
@@ -2718,6 +2765,12 @@
                 "enum": [
                   "selected",
                   "all"
+                ]
+              },
+              "domain": {
+                "anyOf": [
+                  { "$ref": "#/components/schemas/Domain" },
+                  { "type": "null" }
                 ]
               },
               "category": {
@@ -3090,12 +3143,16 @@
         "type": "object",
         "required": [
           "schemaVersion",
+          "scope",
           "count",
           "items"
         ],
         "properties": {
           "schemaVersion": {
             "const": 1
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ReportScope"
           },
           "count": {
             "type": "integer",
@@ -3112,6 +3169,7 @@
       "DailyEntry": {
         "type": "object",
         "required": [
+          "scope",
           "date",
           "generatedAt",
           "leadTitle",
@@ -3119,6 +3177,9 @@
           "links"
         ],
         "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/ReportScope"
+          },
           "date": {
             "type": "string",
             "format": "date"
@@ -3179,6 +3240,7 @@
       "DailyReport": {
         "type": "object",
         "required": [
+          "scope",
           "date",
           "generatedAt",
           "windowStart",
@@ -3189,6 +3251,9 @@
           "flashes"
         ],
         "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/ReportScope"
+          },
           "date": {
             "type": "string",
             "format": "date"

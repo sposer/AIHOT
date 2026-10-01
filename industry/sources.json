@@ -5,6 +5,9 @@
       "id": "rss-openai-news",
       "name": "OpenAI News",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://openai.com/news/rss.xml",
         "_aihot": {
@@ -26,6 +29,9 @@
       "id": "rss-google-deepmind",
       "name": "Google DeepMind",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://deepmind.google/blog/rss.xml",
         "_aihot": {
@@ -47,6 +53,9 @@
       "id": "rss-google-research",
       "name": "Google Research",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://research.google/blog/rss/",
         "_aihot": {
@@ -69,6 +78,9 @@
       "id": "rss-hugging-face",
       "name": "Hugging Face Blog",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://huggingface.co/blog/feed.xml",
         "_aihot": {
@@ -91,6 +103,9 @@
       "id": "rss-microsoft-research",
       "name": "Microsoft Research",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://www.microsoft.com/en-us/research/feed/",
         "_aihot": {
@@ -113,6 +128,9 @@
       "id": "rss-nvidia-blog",
       "name": "NVIDIA Blog",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://blogs.nvidia.com/feed/",
         "_aihot": {
@@ -134,6 +152,9 @@
       "id": "rss-aws-ml",
       "name": "AWS Machine Learning Blog",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://aws.amazon.com/blogs/machine-learning/feed/",
         "_aihot": {
@@ -156,6 +177,9 @@
       "id": "rss-github-ai",
       "name": "GitHub Blog · AI & ML",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://github.blog/ai-and-ml/feed/",
         "_aihot": {
@@ -177,6 +201,9 @@
       "id": "rss-mistral",
       "name": "Mistral AI",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://mistral.ai/rss.xml",
         "_aihot": {
@@ -198,6 +225,9 @@
       "id": "rss-bair",
       "name": "Berkeley AI Research",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://bair.berkeley.edu/blog/feed.xml",
         "_aihot": {
@@ -219,6 +249,9 @@
       "id": "rss-the-verge-ai",
       "name": "The Verge · AI",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
         "_aihot": {
@@ -240,6 +273,9 @@
       "id": "rss-techcrunch-ai",
       "name": "TechCrunch · AI",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://techcrunch.com/category/artificial-intelligence/feed/",
         "_aihot": {
@@ -261,6 +297,9 @@
       "id": "rss-ars-technica-ai",
       "name": "Ars Technica · AI",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://arstechnica.com/ai/feed/",
         "_aihot": {
@@ -282,6 +321,9 @@
       "id": "rss-mit-tech-review-ai",
       "name": "MIT Technology Review · AI",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
         "_aihot": {
@@ -303,6 +345,9 @@
       "id": "rss-the-decoder",
       "name": "The Decoder",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://the-decoder.com/feed/",
         "_aihot": {
@@ -324,6 +369,9 @@
       "id": "rss-simon-willison",
       "name": "Simon Willison",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://simonwillison.net/atom/everything/",
         "_aihot": {
@@ -345,6 +393,9 @@
       "id": "rss-import-ai",
       "name": "Import AI",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://importai.substack.com/feed",
         "_aihot": {
@@ -367,6 +418,9 @@
       "id": "rss-latent-space",
       "name": "Latent Space",
       "kind": "rss",
+      "domains": [
+        "ai"
+      ],
       "config": {
         "feedUrl": "https://www.latent.space/feed",
         "_aihot": {

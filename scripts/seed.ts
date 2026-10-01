@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { FEATURES } from "@aihot/industry/features";
+import type { DomainKey } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { importModelDirectory } from "@aihot/backend/leaderboard/directory";
@@ -21,6 +22,7 @@ interface SeedSource {
   owner_entity_id?: string | null;
   participation_mode?: string;
   interval_minutes?: number;
+  domains: DomainKey[];
   tags?: string[];
   site_fulltext?: boolean;
   syndicate_fulltext?: boolean;
@@ -38,9 +40,9 @@ let added = 0;
 for (const s of sources) {
   assertSupportedConfig(s.kind, s.config);
   const inserted = await sql`
-    INSERT INTO sources (id, name, kind, config, tier, first_party, owner_entity_id, participation_mode, interval_minutes, tags, site_fulltext, syndicate_fulltext, enabled, next_fetch_at)
+    INSERT INTO sources (id, name, kind, config, tier, first_party, owner_entity_id, participation_mode, interval_minutes, domains, tags, site_fulltext, syndicate_fulltext, enabled, next_fetch_at)
     VALUES (${s.id}, ${s.name}, ${s.kind}, ${sql.json(s.config as never)}, ${s.tier ?? "T2"}, ${s.first_party ?? false}, ${s.owner_entity_id ?? null},
-            ${s.participation_mode ?? "editorial"}, ${s.interval_minutes ?? 60}, ${s.tags ?? []}, ${s.site_fulltext ?? false}, ${s.syndicate_fulltext ?? false},
+            ${s.participation_mode ?? "editorial"}, ${s.interval_minutes ?? 60}, ${s.domains}, ${s.tags ?? []}, ${s.site_fulltext ?? false}, ${s.syndicate_fulltext ?? false},
             ${s.enabled ?? true}, now())
     ON CONFLICT (id) DO NOTHING RETURNING id`;
   added += inserted.length;

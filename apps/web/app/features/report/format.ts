@@ -1,9 +1,12 @@
 // Names, dates and grouping for daily, weekly and monthly reports.
-import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
+import { isReportScope, type ReportNavigationEntry, type ReportKind, type ReportScope } from "@aihot/contracts/site";
+import { withSubject } from "@aihot/industry/site";
+import { DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
+import { data } from "react-router";
+export { reportPath, reportArchivePath } from "@aihot/contracts/http-policy";
 import { beijingWeekday } from "../../lib/format";
 
 export const KINDS: ReportKind[] = ["daily", "weekly", "monthly"];
-export const KIND_PATH: Record<ReportKind, string> = { daily: "/daily", weekly: "/weekly", monthly: "/monthly" };
 export const KIND_LABEL: Record<ReportKind, string> = { daily: "日报", weekly: "周报", monthly: "月报" };
 
 export function kindFromPath(pathname: string): ReportKind {
@@ -12,8 +15,23 @@ export function kindFromPath(pathname: string): ReportKind {
   return "daily";
 }
 
-export function reportPath(kind: ReportKind, key: string): string {
-  return `${KIND_PATH[kind]}/${key}`;
+export function latestScope(domain: string | undefined): ReportScope {
+  if (domain === undefined) return "all";
+  if (!isDomainKey(domain)) throw data({ message: "not_found" }, { status: 404 });
+  return domain;
+}
+
+export function detailScope(scope: string | undefined): ReportScope {
+  if (!isReportScope(scope)) throw data({ message: "not_found" }, { status: 404 });
+  return scope;
+}
+
+export function scopeLabel(scope: ReportScope): string {
+  return scope === "all" ? "概览" : DOMAIN_LABELS[scope];
+}
+
+export function reportTitle(kind: ReportKind, scope: ReportScope): string {
+  return withSubject(KIND_LABEL[kind], scope === "all" ? "" : DOMAIN_LABELS[scope]);
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -33,11 +51,12 @@ export function monthRange(key: string): [string, string] {
   return [`${key}-01`, ymd(new Date(Date.UTC(y, m, 0)))];
 }
 
-/** "这一天的 4 件 AI 大事" / "本周的 12 件 AI 大事" / "8 月的 20 件 AI 大事". */
-export function headline(kind: ReportKind, key: string, count: number): string {
-  if (kind === "daily") return `这一天的 ${count} 件 AI 大事`;
-  if (kind === "weekly") return `本周的 ${count} 件 AI 大事`;
-  return `${Number(key.slice(5, 7))} 月的 ${count} 件 AI 大事`;
+/** An issue's generic headline, qualified only in a domain view. */
+export function headline(kind: ReportKind, key: string, count: number, scope: ReportScope): string {
+  const events = withSubject("大事", scope === "all" ? "" : DOMAIN_LABELS[scope]);
+  if (kind === "daily") return `这一天的 ${count} 件${events}`;
+  if (kind === "weekly") return `本周的 ${count} 件${events}`;
+  return `${Number(key.slice(5, 7))} 月的 ${count} 件${events}`;
 }
 
 /** "09.16" for a story inside a week or month. */
@@ -164,7 +183,7 @@ export function dateLine(kind: ReportKind, key: string): string {
 }
 
 /** What each kind is, under its nameplate. */
-export const MOTTO: Record<ReportKind, string> = { daily: "人工智能 · 每日要闻", weekly: "人工智能 · 每周综述", monthly: "人工智能 · 每月盘点" };
+export const MOTTO: Record<ReportKind, string> = { daily: "每日要闻", weekly: "每周综述", monthly: "每月盘点" };
 
 export interface PeriodCell {
   key: string | null;

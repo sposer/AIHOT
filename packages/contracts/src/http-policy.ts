@@ -1,5 +1,17 @@
 // Outward HTTP behaviour, defined once: CORS, cache lifetimes, redirects and which process owns a path.
 // The API server and the web server both read this module.
+import type { ReportKind, ReportScope } from "./site.ts";
+
+/** Report identity is kind/scope/key; the latest overview omits its all scope in the page path. */
+// decision: 共用报告路径生成器；not 网页与各公开出口分别拼接 because 日期详情必须在所有出口指向同一个范围身份。
+export function reportPath(kind: ReportKind, scope: ReportScope, key?: string): string {
+  if (key) return `/${kind}/${scope}/${key}`;
+  return scope === "all" ? `/${kind}` : `/${kind}/${scope}`;
+}
+
+export function reportArchivePath(scope: ReportScope): string {
+  return `${reportPath("daily", scope)}/archive`;
+}
 
 /** CORS for /api/v1/* and /openapi-v1.json. */
 export const PUBLIC_API_CORS: Record<string, string> = {

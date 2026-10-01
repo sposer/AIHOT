@@ -4,6 +4,9 @@
 import { z } from "zod";
 import { SITE } from "@aihot/industry/site";
 import { CATEGORIES } from "@aihot/industry/taxonomy";
+import type { ReportKind, ReportScope } from "@aihot/contracts/site";
+import { DOMAIN_LABELS } from "@aihot/contracts/taxonomy";
+import { domainCondition } from "../publication/items.ts";
 import { promptText, promptVersion } from "../editorial/prompts.ts";
 import { modelFor } from "../editorial/models.ts";
 import { addDays, beijingDate, beijingMidnight, isoWeekLabel, isoWeekRange } from "@aihot/contracts/time";
@@ -46,7 +49,8 @@ function roleOf(kind: string, firstParty: boolean): string {
   return "媒体";
 }
 
-export async function candidates(start: Date, end: Date): Promise<Candidate[]> {
+// decision: 先按领域筛选成员，再选择事实代表；not 先选全站代表再过滤 because 同一事实的代表可能只覆盖另一个领域。
+export async function candidates(scope: ReportScope, start: Date, end: Date): Promise<Candidate[]> {
   const rows = await sql<{
     id: string; title: string; summary: string | null; url: string; category: string | null; score: number | null; first_party: boolean;
     source_id: string; source_name: string; source_kind: string; fact_public_id: string | null; story_public_id: string | null; at: Date; backfill: boolean;
@@ -56,7 +60,7 @@ export async function candidates(start: Date, end: Date): Promise<Candidate[]> {
     FROM publications p JOIN sources s ON s.id = p.source_id
     LEFT JOIN facts f ON f.id = p.fact_id LEFT JOIN stories st ON st.id = f.story_id
     WHERE p.visibility = 'public' AND p.selected AND NOT p.backfill AND p.timeline_at >= ${start} AND p.timeline_at < ${end}
-      AND p.visible_after <= ${end}`;
+      AND p.visible_after <= ${end} ${domainCondition(scope === "all" ? null : scope)}`;
   // One entry per fact: first-party first, then score.
   const byFact = new Map<string, Candidate>();
   for (const r of rows) {
@@ -73,9 +77,9 @@ export async function candidates(start: Date, end: Date): Promise<Candidate[]> {
 }
 
 /** Facts and items already covered by recent editions are not repeated. */
-async function recentlyCovered(kind: "daily", before: string, days = 7): Promise<Set<string>> {
+async function recentlyCovered(scope: ReportScope, kind: "daily", before: string, days = 7): Promise<Set<string>> {
   const rows = await sql<{ content: Record<string, any> }[]>`
-    SELECT content FROM reports WHERE kind = ${kind} AND key < ${before} AND key >= ${addDays(before, -days)}`;
+    SELECT content FROM reports WHERE kind = ${kind} AND scope = ${scope} AND key < ${before} AND key >= ${addDays(before, -days)}`;
   const out = new Set<string>();
   for (const r of rows) {
     for (const s of r.content.sections ?? []) for (const it of s.items ?? []) {
@@ -93,13 +97,16 @@ const LeadSchema = z.object({
   highlights: z.array(z.union([z.number(), z.string()])).max(6).catch([]),
 });
 
-async function writeLead(kind: string, key: string, entries: ReportEntry[], model: string) {
+const scopeLabel = (scope: ReportScope) => scope === "all" ? "各领域" : DOMAIN_LABELS[scope];
+
+async function writeLead(kind: ReportKind, scope: ReportScope, key: string, entries: ReportEntry[], model: string) {
   if (entries.length === 0) return null;
   const list = entries.slice(0, 30).map((e, i) => `${i + 1}. ${e.title}｜${e.summary.slice(0, 120)}`).join("\n");
   const res = await chatJson({
-    model, purpose: "report_lead", subject: `report:${kind}:${key}`, promptVersion: REPORT_VERSION,
-    system: promptText("report-daily-lead"),
-    user: list, schema: LeadSchema, temperature: 0.3, maxTokens: 800,
+    model, purpose: "report_lead", subject: `report:${kind}:${scope}:${key}`, promptVersion: REPORT_VERSION,
+    system: promptText("report-daily-lead", { scopeLabel: scopeLabel(scope) }),
+    // decision: 将报告身份写入实际输入；not 只改 subject because 通用回执以 prompt/system/user/参数去重，不包含 subject。
+    user: `报告：${kind}/${scope}/${key}\n${list}`, schema: LeadSchema, temperature: 0.3, maxTokens: 800,
   });
   const highlights = res.data.highlights
     .map((h) => entries[Number(h) - 1])
@@ -108,28 +115,28 @@ async function writeLead(kind: string, key: string, entries: ReportEntry[], mode
   return { lead: { title: res.data.title, leadParagraph: res.data.leadParagraph }, highlights, receiptId: res.receiptId };
 }
 
-async function saveReport(kind: "daily" | "weekly" | "monthly", key: string, start: Date, end: Date, content: Record<string, unknown>, reason: string, model: string) {
+async function saveReport(kind: ReportKind, scope: ReportScope, key: string, start: Date, end: Date, content: Record<string, unknown>, reason: string, model: string) {
   await sql.begin(async (tx) => {
     const [existing] = await tx<{ id: number; revision: number; content: unknown; generated_at: Date }[]>`
-      SELECT id, revision, content, generated_at FROM reports WHERE kind = ${kind} AND key = ${key} FOR UPDATE`;
+      SELECT id, revision, content, generated_at FROM reports WHERE kind = ${kind} AND scope = ${scope} AND key = ${key} FOR UPDATE`;
     if (existing) {
       await tx`INSERT INTO report_revisions (report_id, revision, content, generated_at, reason)
                VALUES (${existing.id}, ${existing.revision}, ${tx.json(existing.content as never)}, ${existing.generated_at}, ${reason}) ON CONFLICT DO NOTHING`;
       await tx`UPDATE reports SET content = ${tx.json(content as never)}, window_start = ${start}, window_end = ${end}, generated_at = now(),
                  model = ${model}, revision = revision + 1, origin = 'model', updated_at = now() WHERE id = ${existing.id}`;
     } else {
-      await tx`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, model, origin)
-               VALUES (${kind}, ${key}, ${start}, ${end}, ${tx.json(content as never)}, now(), ${model}, 'model')`;
+      await tx`INSERT INTO reports (kind, scope, key, window_start, window_end, content, generated_at, model, origin)
+               VALUES (${kind}, ${scope}, ${key}, ${start}, ${end}, ${tx.json(content as never)}, now(), ${model}, 'model')`;
     }
   });
 }
 
 /** Daily report for Beijing date D covers [D-1 08:00, D 08:00) Beijing time. */
-export async function composeDaily(date: string, reason = "scheduled"): Promise<{ key: string; entries: number }> {
+export async function composeDaily(scope: ReportScope, date: string, reason = "scheduled"): Promise<{ scope: ReportScope; key: string; entries: number }> {
   const end = new Date(beijingMidnight(date).getTime() + 8 * 3600 * 1000);
   const start = new Date(end.getTime() - 86400000);
-  const covered = await recentlyCovered("daily", date);
-  const all = await candidates(start, end);
+  const covered = await recentlyCovered(scope, "daily", date);
+  const all = await candidates(scope, start, end);
   const fresh = all.filter((c) => !covered.has(c.factKey) && !covered.has(`a:${c.itemId}`));
   const perSection = new Map<string, Candidate[]>();
   const flashes: Array<{ itemId: string; title: string; sourceName: string; sourceUrl: string; publishedAt: string }> = [];
@@ -146,7 +153,7 @@ export async function composeDaily(date: string, reason = "scheduled"): Promise<
   }));
   const ordered = sections.flatMap((s) => s.items).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   const model = await modelFor("report");
-  const lead = ordered.length ? await writeLead("daily", date, ordered, model) : null;
+  const lead = ordered.length ? await writeLead("daily", scope, date, ordered, model) : null;
   const content = {
     date,
     lead: lead?.lead ?? null,
@@ -163,9 +170,9 @@ export async function composeDaily(date: string, reason = "scheduled"): Promise<
     windowEnd: end.toISOString(),
     generator: { version: REPORT_VERSION, model, repeatsSuppressed: all.length - fresh.length },
   };
-  await saveReport("daily", date, start, end, content, reason, model);
+  await saveReport("daily", scope, date, start, end, content, reason, model);
   if (lead) await completeReceipt(sql, lead.receiptId);
-  return { key: date, entries: ordered.length };
+  return { scope, key: date, entries: ordered.length };
 }
 
 export const PeriodSchema = z.object({
@@ -180,20 +187,20 @@ export const PeriodSchema = z.object({
 });
 
 /** The editor's brief for a week or month: its top entries as a numbered list, each with its section. */
-export function periodPrompt(kind: "weekly" | "monthly", startDate: string, endDateInclusive: string, top: Candidate[]) {
+export function periodPrompt(kind: "weekly" | "monthly", scope: ReportScope, key: string, startDate: string, endDateInclusive: string, top: Candidate[]) {
   const list = top.map((e, i) => `${i + 1}. [${SECTION_OF[e.category ?? ""] ?? DEFAULT_SECTION}] ${e.title}｜${e.summary.slice(0, 140)}`).join("\n");
   return {
-    system: promptText("report-period", { kindName: kind === "weekly" ? "周报" : "月报", overviewLength: kind === "weekly" ? "150–300" : "200–400" }),
-    user: `本期：${startDate} 至 ${endDateInclusive}\n${list}`,
+    system: promptText("report-period", { scopeLabel: scopeLabel(scope), kindName: kind === "weekly" ? "周报" : "月报", overviewLength: kind === "weekly" ? "150–300" : "200–400" }),
+    user: `报告：${kind}/${scope}/${key}\n本期：${startDate} 至 ${endDateInclusive}\n${list}`,
   };
 }
 
-async function composePeriod(kind: "weekly" | "monthly", key: string, startDate: string, endDateInclusive: string, reason: string) {
+async function composePeriod(kind: "weekly" | "monthly", scope: ReportScope, key: string, startDate: string, endDateInclusive: string, reason: string) {
   const start = beijingMidnight(startDate);
   const end = beijingMidnight(addDays(endDateInclusive, 1));
-  const all = await candidates(start, end);
+  const all = await candidates(scope, start, end);
   const top = all.slice(0, kind === "weekly" ? 40 : 60);
-  const dailyCount = (await sql<{ n: number }[]>`SELECT count(*) AS n FROM reports WHERE kind = 'daily' AND key >= ${startDate} AND key <= ${endDateInclusive}`)[0]?.n ?? 0;
+  const dailyCount = (await sql<{ n: number }[]>`SELECT count(*) AS n FROM reports WHERE kind = 'daily' AND scope = ${scope} AND key >= ${startDate} AND key <= ${endDateInclusive}`)[0]?.n ?? 0;
   let themes: Array<{ heading: string; summary: string; storyRefs: ReportEntry[] }> = [];
   let headline = "";
   let overview = "";
@@ -201,8 +208,8 @@ async function composePeriod(kind: "weekly" | "monthly", key: string, startDate:
   const model = await modelFor("report");
   if (top.length) {
     const res = await chatJson({
-      model, purpose: `report_${kind}`, subject: `report:${kind}:${key}`, promptVersion: REPORT_VERSION,
-      ...periodPrompt(kind, startDate, endDateInclusive, top), schema: PeriodSchema, temperature: 0.3, maxTokens: 2500,
+      model, purpose: `report_${kind}`, subject: `report:${kind}:${scope}:${key}`, promptVersion: REPORT_VERSION,
+      ...periodPrompt(kind, scope, key, startDate, endDateInclusive, top), schema: PeriodSchema, temperature: 0.3, maxTokens: 2500,
     });
     receiptId = res.receiptId;
     headline = res.data.headline.trim();
@@ -215,7 +222,7 @@ async function composePeriod(kind: "weekly" | "monthly", key: string, startDate:
   }
   const content = {
     kind,
-    title: kind === "weekly" ? `${SITE.name} 周报 · ${key}` : `${SITE.name} 月报 · ${key}`,
+    title: `${SITE.name} ${scope === "all" ? "" : `${DOMAIN_LABELS[scope]} `}${kind === "weekly" ? "周报" : "月报"} · ${key}`,
     ...(kind === "weekly" ? { isoLabel: key } : { monthLabel: key }),
     periodStart: startDate,
     periodEnd: endDateInclusive,
@@ -226,43 +233,43 @@ async function composePeriod(kind: "weekly" | "monthly", key: string, startDate:
     metrics: { totalStories: themes.reduce((n, t) => n + t.storyRefs.length, 0), selectedCount: all.length, reportsCovered: Number(dailyCount) },
     generator: { version: REPORT_VERSION, model },
   };
-  await saveReport(kind, key, start, end, content, reason, model);
+  await saveReport(kind, scope, key, start, end, content, reason, model);
   if (receiptId) await completeReceipt(sql, receiptId);
-  return { key, entries: top.length };
+  return { scope, key, entries: top.length };
 }
 
-export async function composeWeekly(label: string, reason = "scheduled") {
+export async function composeWeekly(scope: ReportScope, label: string, reason = "scheduled") {
   const range = isoWeekRange(label);
   if (!range) throw new Error(`bad week label ${label}`);
-  return composePeriod("weekly", label, range.start, range.end, reason);
+  return composePeriod("weekly", scope, label, range.start, range.end, reason);
 }
 
-export async function composeMonthly(label: string, reason = "scheduled") {
+export async function composeMonthly(scope: ReportScope, label: string, reason = "scheduled") {
   const m = /^(\d{4})-(\d{2})$/.exec(label);
   if (!m) throw new Error(`bad month label ${label}`);
   const start = `${label}-01`;
   const next = Number(m[2]) === 12 ? `${Number(m[1]) + 1}-01-01` : `${m[1]}-${String(Number(m[2]) + 1).padStart(2, "0")}-01`;
-  return composePeriod("monthly", label, start, addDays(next, -1), reason);
+  return composePeriod("monthly", scope, label, start, addDays(next, -1), reason);
 }
 
 /**
  * Catch-up: generates any missing daily report for the last `days` days (never the future and never
  * before the first report in the database), the last complete week and the last complete month.
  */
-export async function catchUpReports(now = new Date(), days = 7): Promise<{ generated: string[] }> {
+export async function catchUpReports(scope: ReportScope, now = new Date(), days = 7): Promise<{ generated: string[] }> {
   const generated: string[] = [];
   const today = beijingDate(now);
   const bjHour = Number(new Date(now.getTime() + 8 * 3600000).toISOString().slice(11, 13));
-  const [first] = await sql<{ key: string | null }[]>`SELECT min(key) AS key FROM reports WHERE kind = 'daily'`;
+  const [first] = await sql<{ key: string | null }[]>`SELECT min(key) AS key FROM reports WHERE kind = 'daily' AND scope = ${scope}`;
   const latestDue = bjHour >= 8 ? today : addDays(today, -1);
   for (let i = days - 1; i >= 0; i--) {
     if (shutdownSignal.signal.aborted) return { generated }; // the next hourly run continues
     const d = addDays(latestDue, -i);
     if (first?.key && d < first.key) continue;
-    const [exists] = await sql`SELECT 1 FROM reports WHERE kind = 'daily' AND key = ${d}`;
+    const [exists] = await sql`SELECT 1 FROM reports WHERE kind = 'daily' AND scope = ${scope} AND key = ${d}`;
     if (!exists) {
-      await composeDaily(d, "catch-up");
-      generated.push(`daily:${d}`);
+      await composeDaily(scope, d, "catch-up");
+      generated.push(`daily:${scope}:${d}`);
     }
   }
   // Last complete ISO week (Monday 10:00 onwards).
@@ -270,10 +277,10 @@ export async function catchUpReports(now = new Date(), days = 7): Promise<{ gene
   const lastWeek = isoWeekLabel(addDays(today, -dow - 7));
   const weekDue = dow > 0 || bjHour >= 10;
   if (weekDue) {
-    const [w] = await sql`SELECT 1 FROM reports WHERE kind = 'weekly' AND key = ${lastWeek}`;
+    const [w] = await sql`SELECT 1 FROM reports WHERE kind = 'weekly' AND scope = ${scope} AND key = ${lastWeek}`;
     if (!w) {
-      await composeWeekly(lastWeek, "catch-up");
-      generated.push(`weekly:${lastWeek}`);
+      await composeWeekly(scope, lastWeek, "catch-up");
+      generated.push(`weekly:${scope}:${lastWeek}`);
     }
   }
   // Last complete month (1st 10:30 onwards).
@@ -281,10 +288,10 @@ export async function catchUpReports(now = new Date(), days = 7): Promise<{ gene
   const prevMonth = mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, "0")}`;
   const monthDue = dd > 1 || bjHour > 10 || (bjHour === 10 && Number(new Date(now.getTime() + 8 * 3600000).toISOString().slice(14, 16)) >= 30);
   if (monthDue) {
-    const [m] = await sql`SELECT 1 FROM reports WHERE kind = 'monthly' AND key = ${prevMonth}`;
+    const [m] = await sql`SELECT 1 FROM reports WHERE kind = 'monthly' AND scope = ${scope} AND key = ${prevMonth}`;
     if (!m) {
-      await composeMonthly(prevMonth, "catch-up");
-      generated.push(`monthly:${prevMonth}`);
+      await composeMonthly(scope, prevMonth, "catch-up");
+      generated.push(`monthly:${scope}:${prevMonth}`);
     }
   }
   return { generated };

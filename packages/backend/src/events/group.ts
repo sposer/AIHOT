@@ -588,8 +588,6 @@ export interface GroupResult {
 }
 
 export interface GroupOptions {
-  /** Discussion evidence only (hot_signal sources): attach to a story, never create one. */
-  signalOnly?: boolean;
   /** An explicit regroup: drop the automatic membership and decide again (manual decisions still win). A report waiting in regroup_pending is regrouped the same way. */
   force?: boolean;
 }
@@ -628,7 +626,7 @@ async function decide(articleId: string, opts: GroupOptions): Promise<GroupResul
     return { verdict: "historical" };
   }
 
-  if (opts.signalOnly || a.participation_mode !== "editorial") return groupSignal(a, source, observedAt);
+  if (a.participation_mode !== "editorial") return groupSignal(a, source, observedAt);
 
   const kept = await currentMembership(articleId);
   if (kept) {
@@ -794,7 +792,7 @@ async function reclaimWaiting(tweetId: string): Promise<number> {
     SELECT a.id FROM articles a JOIN sources s ON s.id = a.source_id
     WHERE a.discovered_at > now() - make_interval(hours => ${WAIT_HOURS}) AND ${unattachedSignal}
       AND (a.x_post->>'replyTo' = ${tweetId} OR substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') = ${tweetId})`;
-  for (const p of posts) await enqueue(QUEUES.group, { articleId: p.id, signalOnly: true }, { singletonKey: p.id, priority: -1 });
+  for (const p of posts) await enqueue(QUEUES.group, { articleId: p.id }, { singletonKey: p.id, priority: -1 });
   return posts.length;
 }
 
@@ -819,7 +817,7 @@ async function rematchSignals(articleId: string, queryText: string): Promise<num
     const v = vectors.get(p.id);
     if (!v || cosine32(mine, v) < SIGNAL_MIN_COSINE) continue;
     // A post still waiting in the queue keeps that job (same key): it will meet the new fact anyway.
-    await enqueue(QUEUES.group, { articleId: p.id, signalOnly: true }, { singletonKey: p.id, priority: -1 });
+    await enqueue(QUEUES.group, { articleId: p.id }, { singletonKey: p.id, priority: -1 });
     close += 1;
   }
   return close;

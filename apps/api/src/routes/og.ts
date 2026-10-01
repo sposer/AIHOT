@@ -1,7 +1,8 @@
 // Share images (1200×630 PNG) for pages, items, reports, topics and events. Only public content
 // gets a card; anything else is a real 404.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
+import { isReportScope } from "@aihot/contracts/site";
+import { CATEGORY_LABELS, DOMAIN_LABELS } from "@aihot/contracts/taxonomy";
 import { beijingDate } from "@aihot/contracts/time";
 import { loadItemShare } from "@aihot/backend/publication/og";
 import { loadReport, type ReportKind } from "@aihot/backend/publication/reports";
@@ -99,13 +100,13 @@ export function registerOg(app: FastifyInstance) {
     return reply.type("image/png").send((await renderPoster(poster)).png);
   });
 
-  app.get("/og/reports/:kind/:file", async (req, reply) => {
-    const { kind, file } = req.params as { kind: string; file: string };
-    if (!["daily", "weekly", "monthly"].includes(kind) || !file.endsWith(".png")) return notFound(reply);
-    const r = await loadReport(kind as ReportKind, file.slice(0, -4));
+  app.get("/og/reports/:kind/:scope/:file", async (req, reply) => {
+    const { kind, scope, file } = req.params as { kind: string; scope: string; file: string };
+    if (!["daily", "weekly", "monthly"].includes(kind) || !isReportScope(scope) || !file.endsWith(".png")) return notFound(reply);
+    const r = await loadReport(kind as ReportKind, scope, file.slice(0, -4));
     if (!r) return notFound(reply);
     return send(req, reply, {
-      kicker: `${REPORT_NAMES[r.kind]} · ${r.key}`,
+      kicker: `${withSubject(REPORT_NAMES[r.kind], r.scope === "all" ? "" : DOMAIN_LABELS[r.scope])} · ${r.key}`,
       title: r.lead?.title ?? r.title,
       subtitle: r.lead?.leadParagraph ?? r.overview,
       meta: `${r.stories.length} 条核心新闻 · 约 ${r.readingMinutes} 分钟读完`,

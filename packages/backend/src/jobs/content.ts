@@ -72,7 +72,7 @@ export async function queueProcessing(articleId: string, opts: { step?: Step; at
   await db`UPDATE articles SET processing_queued_at = now() WHERE id = ${articleId}`;
   if (step === "extract") return enqueue(QUEUES.extractBody, { articleId }, { singletonKey: articleId, priority: r.historical ? PRIORITY.history : PRIORITY.live }, opts.db);
   if (r.signal && !opts.attemptTag) {
-    return enqueue(QUEUES.group, { articleId, signalOnly: true }, { singletonKey: articleId, priority: r.historical ? PRIORITY.history : PRIORITY.liveSignal }, opts.db);
+    return enqueue(QUEUES.group, { articleId }, { singletonKey: articleId, priority: r.historical ? PRIORITY.history : PRIORITY.liveSignal }, opts.db);
   }
   const tagged = !!opts.attemptTag;
   return enqueue(QUEUES.analyze, tagged ? { articleId, attemptTag: opts.attemptTag } : { articleId },
@@ -83,14 +83,14 @@ export async function queueProcessing(articleId: string, opts: { step?: Step; at
  * A post of a non-editorial source: recorded (hot_signal material only feeds heat; isolated material
  * never reaches public surfaces). Returns whether it is discussion evidence to group.
  */
-export async function settleNonEditorial(articleId: string): Promise<{ group: boolean }> {
+export async function settleNonEditorial(articleId: string): Promise<{ settled: boolean; group: boolean }> {
   const [row] = await sql<{ participation_mode: string; backfill: boolean; published_at: Date | null; discovered_at: Date }[]>`
     UPDATE articles a SET processing_state = 'skipped', processing_attempts = 0, processing_retry_at = NULL, processing_queued_at = NULL
     FROM sources s WHERE s.id = a.source_id AND a.id = ${articleId} AND s.participation_mode <> 'editorial'
     RETURNING s.participation_mode, a.backfill, a.published_at, a.discovered_at`;
-  if (!row) return { group: false };
+  if (!row) return { settled: false, group: false };
   await publishArticle(articleId);
-  return { group: row.participation_mode === "hot_signal" && !isHistorical(row) };
+  return { settled: true, group: row.participation_mode === "hot_signal" && !isHistorical(row) };
 }
 
 /** attemptTag makes an explicit re-evaluation a new (paid) request; the same tag reuses its receipt. */
@@ -102,7 +102,7 @@ export async function processArticle(articleId: string, opts: { attemptTag?: str
   if (row.participation_mode !== "editorial") {
     // Normally queued straight for grouping (queueProcessing); an explicit re-evaluation lands here.
     const { group } = await settleNonEditorial(articleId);
-    if (group) await enqueue(QUEUES.group, { articleId, signalOnly: true }, { singletonKey: articleId, priority: PRIORITY.liveSignal });
+    if (group) await enqueue(QUEUES.group, { articleId }, { singletonKey: articleId, priority: PRIORITY.liveSignal });
     return { state: "skipped" };
   }
   try {

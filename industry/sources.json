@@ -437,6 +437,33 @@
       ],
       "site_fulltext": false,
       "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-nature-medicine",
+      "name": "Nature Medicine",
+      "kind": "rss",
+      "domains": [
+        "medical"
+      ],
+      "config": {
+        "feedUrl": "https://www.nature.com/nm.rss",
+        "contentIsBody": false,
+        "fetchPublicContent": true,
+        "sortByPublishedAt": true,
+        "_aihot": {
+          "initialBackfillLimit": 8
+        }
+      },
+      "tier": "T1",
+      "first_party": false,
+      "owner_entity_id": null,
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "tags": [
+        "研究"
+      ],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
     }
   ]
 }

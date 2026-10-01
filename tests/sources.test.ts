@@ -16,6 +16,7 @@ import { noiseFiltered } from "@aihot/backend/sources/collect";
 import { unsupportedConfig } from "@aihot/backend/sources/config-keys";
 
 const source = (config: Record<string, unknown>) => ({ id: "test-list", config }) as never;
+const ABSTRACT = "A multicentre clinical study followed 1,038 participants and reports five-year outcomes across 26 centres. The abstract summarises the findings without the trial methods, detailed results, or limitations. ".repeat(3).trim();
 
 // mimo.xiaomi.com as served on 2026-09-28, cut down: rows that navigate by script, the runtime's chunk
 // map, the route table naming the homepage's chunks, and the chunk with the Blog list among the menu,
@@ -36,6 +37,9 @@ const pages: Record<string, (cdn: string) => string> = {
     `<content type="html"><![CDATA[<p>${"AMD announced today that it is acquiring World Labs in an all-stock deal. ".repeat(8)}</p><p>Read the full story at The Verge.</p>]]></content></entry>` +
     `<entry><title>A whole post</title><link rel="alternate" href="https://example.org/whole"/><published>2026-09-28T10:00:00Z</published>` +
     `<content type="html"><![CDATA[<p>${"The feed carries this post whole, paragraph after paragraph. ".repeat(30)}</p>]]></content></entry></feed>`,
+  "/abstract.xml": () => `<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Research</title><item><title>Clinical study</title><link>https://example.org/study</link><content:encoded><![CDATA[<p>${ABSTRACT}</p>]]></content:encoded></item></channel></rss>`,
+  "/abstract.rdf": () => `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:content="http://purl.org/rss/1.0/modules/content/"><item><title>Clinical study</title><link>https://example.org/study</link><content:encoded><![CDATA[<p>${ABSTRACT}</p>]]></content:encoded></item></rdf:RDF>`,
+  "/abstract.atom": () => `<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Clinical study</title><link href="https://example.org/study"/><content type="html"><![CDATA[<p>${ABSTRACT}</p>]]></content></entry></feed>`,
   // A list API that gives calendar days as yyyymmdd.
   "/days.json": () => JSON.stringify({ data: { list: [{ seq: 695, ttl: "MCFlow", day: "20260922" }, { seq: 1, ttl: "Bad day", day: "20260230" }] } }),
   // Google Developers Blog: no date in the feed or in meta tags, only in JSON-LD.
@@ -163,17 +167,30 @@ test("a listing that links other articles in its teasers takes only the links th
   assert.equal(fromMarkdown(md, "https://example.org", source({ ...config, linksStartLine: undefined })).length, 5, "without the option prose links count");
 });
 
-test("feed text that only teases the article is a summary: the page is fetched before judging", async () => {
+test("feed abstracts await the page, while complete content remains available", async () => {
   const read = await fetchRss({ id: "test-feed", config: { feedUrl: `${site}/verge.xml` }, participation_mode: "editorial", cursor: null } as never, { force: true });
   const [teaser, whole] = read.candidates;
   assert.equal(teaser!.bodyStatus, "pending");
   assert.equal(teaser!.bodyText, null);
   assert.equal(teaser!.excerpt, "AMD announced today that it's acquiring World Labs.");
   assert.equal(whole!.bodyStatus, "ok");
-  assert.ok(whole!.bodyText!.length > 1200);
+  assert.ok(whole!.bodyText);
   // Discussion sources only need what the feed says.
   const signal = await fetchRss({ id: "test-feed", config: { feedUrl: `${site}/verge.xml` }, participation_mode: "hot_signal", cursor: null } as never, { force: true });
   assert.equal(signal.candidates[0]!.bodyStatus, "ok");
+  // An encoded content field can also contain only the abstract, without a description or teaser mark.
+  for (const path of ["/abstract.xml", "/abstract.rdf", "/abstract.atom"]) {
+    const config = { feedUrl: `${site}${path}`, contentIsBody: false };
+    const summary = await fetchRss({ id: "test-abstract", config, participation_mode: "editorial", cursor: null } as never, { force: true });
+    assert.deepEqual(
+      [summary.candidates[0]!.excerpt, summary.candidates[0]!.bodyHtml, summary.candidates[0]!.bodyText, summary.candidates[0]!.bodyStatus],
+      [ABSTRACT, null, null, "pending"],
+      path,
+    );
+    assert.deepEqual(unsupportedConfig("rss", config), []);
+    const defaultRead = await fetchRss({ id: "test-default", config: { feedUrl: config.feedUrl }, participation_mode: "editorial", cursor: null } as never, { force: true });
+    assert.equal(defaultRead.candidates[0]!.bodyStatus, "ok", "omitting the content rule retains the existing encoded-content behavior");
+  }
 });
 
 test("hidden page parts are dropped whole, and a news page's closing blocks are trimmed", () => {

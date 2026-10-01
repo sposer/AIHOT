@@ -120,6 +120,9 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
     throw new FetchError(`feed parse error: ${String(e).slice(0, 200)}`);
   }
   const summaryIsBody = source.config.summaryIsBody === true;
+  // decision: keep contentIsBody independent of summaryIsBody; not overload the summary flag because
+  // it authorizes description as body, while complete encoded content is the existing feed default.
+  const contentIsBody = source.config.contentIsBody !== false;
   // Entries that are sections of one page (#september-24-2026 …) keep their fragment as identity.
   const identity = (link: string) =>
     source.config.preserveUrlFragment === true ? { identityKey: identityKeyForUrl(link, { keepFragment: true }) ?? undefined } : {};
@@ -134,12 +137,12 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
       if (!link || !title) continue;
       const contentEncoded = text(it["content:encoded"]);
       const description = text(it.description);
-      const bodyHtmlRaw = contentEncoded || (summaryIsBody ? description : "");
+      const bodyHtmlRaw = (contentIsBody ? contentEncoded : "") || (summaryIsBody ? description : "");
       const bodyHtml = bodyHtmlRaw ? sanitizeBody(bodyHtmlRaw, link) : null;
       const enclosure = arr(it.enclosure as Record<string, string> | Array<Record<string, string>>).find((e) => /^image\//.test(e?.["@type"] ?? ""));
       const media = [
         ...(enclosure ? [{ kind: "image" as const, url: enclosure["@url"]! }] : []),
-        ...(bodyHtmlRaw ? imagesFrom(bodyHtmlRaw, link) : []),
+        ...(contentEncoded || bodyHtmlRaw ? imagesFrom(contentEncoded || bodyHtmlRaw, link) : []),
       ];
       out.push({
         url: link,
@@ -147,7 +150,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         title,
         author: text(it["dc:creator"]) || text(it.author) || null,
         publishedAt: parseDate(text(it.pubDate) || text(it["dc:date"]) || text(it.published)),
-        ...feedText(bodyHtml, description, source),
+        ...feedText(bodyHtml, description || (!contentIsBody ? contentEncoded : ""), source),
         media: media.slice(0, 6),
         categories: arr(it.category).map((c) => text(c)).filter(Boolean),
         raw: { guid: text(it.guid) || null },
@@ -164,7 +167,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
       if (!link || !title) continue;
       const content = text(e.content);
       const summary = text(e.summary);
-      const bodyHtml = content ? sanitizeBody(content, link) : null;
+      const bodyHtml = contentIsBody && content ? sanitizeBody(content, link) : null;
       const entryUrl = new URL(link, url).toString();
       out.push({
         url: entryUrl,
@@ -173,7 +176,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         author: text(arr(e.author)[0]?.name) || null,
         publishedAt: parseDate(text(e.published) || text(e.updated)),
         sourceUpdatedAt: parseDate(text(e.updated)),
-        ...feedText(bodyHtml, summary, source),
+        ...feedText(bodyHtml, summary || (!contentIsBody ? content : ""), source),
         media: content ? imagesFrom(content, link) : [],
         categories: arr(e.category).map((c: any) => c?.["@term"] ?? text(c)).filter(Boolean),
         raw: { id: text(e.id) || null },

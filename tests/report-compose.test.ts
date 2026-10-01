@@ -1,11 +1,12 @@
-// Retained vertical slice: live RSS material uses the existing analysis/publication/grouping path,
-// then two scopes compose the same edition and expose their own reports through the public ports.
+// Retained vertical slice: a live RSS abstract reaches its article page before the existing
+// analysis/publication/grouping path, then two scopes expose their own edition through public ports.
 import { stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
+import type { PgBoss } from "pg-boss";
 import { XMLParser } from "fast-xml-parser";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { addDays, beijingDate, beijingMidnight } from "@aihot/contracts/time";
@@ -13,8 +14,8 @@ import { MCP_TOOL_NAMES } from "@aihot/contracts/mcp";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { collectSource } from "@aihot/backend/sources/collect";
-import { processArticle } from "@aihot/backend/jobs/content";
-import { stopBoss } from "@aihot/backend/jobs/queue";
+import { processArticle, registerExtractionJobs } from "@aihot/backend/jobs/content";
+import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { groupArticle } from "@aihot/backend/events/group";
 import { BATCH_SYSTEM } from "@aihot/backend/events/relate";
 import { composeDaily } from "@aihot/backend/reports/compose";
@@ -43,6 +44,7 @@ const provider = await stub((_hit, req) => {
 for (const key of ["DASHSCOPE_BASE_URL", "ZHIPU_BASE_URL", "DEEPSEEK_BASE_URL"]) process.env[key] = `${provider.url}/v1`;
 for (const key of ["DASHSCOPE_API_KEY", "ZHIPU_API_KEY", "DEEPSEEK_API_KEY"]) process.env[key] = "test-key";
 process.env.EMBEDDINGS_ENABLED = "false";
+process.env.JINA_BODY_FALLBACK = "false";
 config.allowPrivateNetworkFetch = true;
 const app = await buildApp();
 after(async () => {
@@ -67,29 +69,52 @@ test("medical material reaches all and medical editions without another classifi
   const date = addDays(beijingDate(liveAt), 1);
   t.mock.timers.enable({ apis: ["Date"], now: liveAt });
   let id: string | undefined;
+  const abstract = `Clinical trial ${T}: a randomised controlled study enrolled 120 participants. The feed provides the study abstract, with an overview of participants and follow-up. `.repeat(3).trim();
   const body = `<p>Clinical trial ${T}: a randomised controlled study enrolled 120 participants and reported its primary endpoint, adverse events, and limitations.</p>`.repeat(8);
-  const feed = createServer((_req, res) => {
-    res.setHeader("content-type", "application/rss+xml");
-    res.end(`<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Clinical research</title><item><title>Clinical trial ${T}</title><link>https://example.com/clinical-${T}</link><pubDate>${liveAt.toUTCString()}</pubDate><content:encoded><![CDATA[${body}]]></content:encoded></item></channel></rss>`);
+  let pageReads = 0;
+  const feed = createServer((req, res) => {
+    if (req.url === "/feed.xml") {
+      res.setHeader("content-type", "application/rss+xml");
+      res.end(`<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Clinical research</title><item><title>Clinical trial ${T}</title><link>${origin}/clinical-${T}</link><pubDate>${liveAt.toUTCString()}</pubDate><content:encoded><![CDATA[<p>${abstract}</p>]]></content:encoded></item></channel></rss>`);
+    } else {
+      pageReads += 1;
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      res.end(`<html><head><title>Clinical trial ${T}</title></head><body><article><h1>Clinical trial ${T}</h1>${body}</article></body></html>`);
+    }
   });
   feed.listen(0, "127.0.0.1");
   await once(feed, "listening");
+  const origin = `http://127.0.0.1:${(feed.address() as AddressInfo).port}`;
   const client = new Client({ name: "report-scope-test", version: "1" }, { versionNegotiation: { mode: "auto" } });
   try {
     // Coverage is deliberately wrong: only the structure result owns this article's domain.
     await sql`INSERT INTO sources (id, name, kind, config, tier, participation_mode, domains, cursor, next_fetch_at)
-      VALUES (${SOURCE}, 'Clinical test source', 'rss', ${sql.json({ feedUrl: `http://127.0.0.1:${(feed.address() as AddressInfo).port}/feed.xml` })}, 'T1', 'editorial', ARRAY['ai'],
+      VALUES (${SOURCE}, 'Clinical test source', 'rss', ${sql.json({ feedUrl: `${origin}/feed.xml`, contentIsBody: false, fetchPublicContent: true })}, 'T1', 'editorial', ARRAY['ai'],
         ${sql.json({ initializedAt: new Date(liveAt.getTime() - 60_000).toISOString() })}, '2100-01-01')`;
     const collected = await collectSource(SOURCE);
     assert.deepEqual([collected.status, collected.created], ["ok", 1]);
-    const [article] = await sql<{ id: string }[]>`SELECT id FROM articles WHERE source_id = ${SOURCE}`;
+    const [article] = await sql<{ id: string; excerpt: string; body_text: string | null; body_status: string; revision: number }[]>`
+      SELECT id, excerpt, body_text, body_status, revision FROM articles WHERE source_id = ${SOURCE}`;
     id = article!.id;
+    assert.deepEqual([article!.excerpt, article!.body_text, article!.body_status, article!.revision], [abstract, null, "pending", 1]);
+    const queued = await sql<{ name: string }[]>`SELECT name FROM pgboss.job WHERE data->>'articleId' = ${id}`;
+    assert.deepEqual(queued.map((j) => j.name), [QUEUES.extractBody], "the native collector queues the article page before analysis");
+    assert.equal((await processArticle(id)).state, "fetching-body");
+    assert.equal(requests.length, 0, "the abstract alone is not sent to a model while the page is pending");
+    let extract!: (jobs: Array<{ data: { articleId: string } }>) => Promise<{ state: string }>;
+    const boss = { work: async (name: string, options: unknown, run: typeof extract) => { if (name === QUEUES.extractBody) extract = run; } } as unknown as PgBoss;
+    await registerExtractionJobs(boss);
+    assert.deepEqual(await extract([{ data: { articleId: id } }]), { state: "ok" });
+    const [full] = await sql<{ body_text: string; body_status: string; revision: number }[]>`SELECT body_text, body_status, revision FROM articles WHERE id = ${id}`;
+    assert.deepEqual([full!.body_status, full!.revision, pageReads], ["ok", 2, 1]);
+    assert.ok(full!.body_text.includes("adverse events") && full!.body_text.includes("limitations"), "the page's results and limitations, absent from the abstract, reach the new revision");
     assert.equal((await processArticle(id)).state, "pass");
     assert.equal(requests.filter((r) => r.system.includes("事件注意力评分器")).length, 2);
     assert.equal(requests.length, 5, "the existing structure call supplies domains");
     await groupArticle(id);
     const [analysis] = await sql<{ domains: string[]; input_revision: number; receipt_ids: number[] }[]>`SELECT domains, input_revision, receipt_ids FROM analyses WHERE article_id = ${id}`;
-    assert.deepEqual([analysis!.domains, analysis!.input_revision, analysis!.receipt_ids.length], [["medical"], 1, 5]);
+    assert.deepEqual([analysis!.domains, analysis!.input_revision, analysis!.receipt_ids.length], [["medical"], 2, 5]);
+    assert.ok(requests[0]!.user.includes("adverse events"), "the prefilter reads the extracted page, not just the feed abstract");
     const [publication] = await sql<{ domains: string[]; backfill: boolean }[]>`SELECT domains, backfill FROM publications WHERE article_id = ${id}`;
     assert.deepEqual([publication!.domains, publication!.backfill], [["medical"], false]);
     t.mock.timers.setTime(beijingMidnight(date).getTime() + 8 * 3600_000 + 1000);

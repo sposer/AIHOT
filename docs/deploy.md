@@ -29,7 +29,9 @@ npm run image:build -- --repository registry.example/myhot --ref HEAD
 
 脚本只构建应用镜像。PostgreSQL 和可选 HTTPS 的 Caddy 保持原版，已有的目标平台镜像只重打私有仓库标签；本机缺少对应镜像时才拉取。三个本机镜像及消费文件就绪后交给发布方，构建脚本不推送、不导出镜像归档。`--platform` 默认为 `linux/amd64`，可以指定目标平台。
 
-消费文件位于 `.data/releases/`，包含 `images.env`、`docker-compose.yml`、`.env.example` 和 `deploy/`，不包含本机 `.env`。发布方在同一本机 Docker 上执行三个镜像的 `docker push`，用 `docker buildx imagetools inspect` 核实仓库摘要，将 `images.env` 中全部引用一次性固定为 `tag@sha256:<digest>` 后交付部署主机。发布与部署由消费侧的运维流程管理，源码仓不维护第二套发布所有者。
+消费文件位于 `.data/releases/`，包含 `images.env`、`docker-compose.yml`、`.env.example` 和 `deploy/`，不包含本机 `.env`。发布方在同一本机 Docker 上执行三个镜像的 `docker push`，用 `docker buildx imagetools inspect` 核实仓库顶层摘要；`images.env` 保留构建脚本生成的唯一版本 tag 后交付部署主机。摘要记录在发布结果中用于核验，不追加到运行引用。发布与部署由消费侧的运维流程管理，源码仓不维护第二套发布所有者。
+
+决策记录：decision: 运行引用使用包含构建时间和提交号的唯一版本 tag，仓库摘要仅用于发布核验; not 在 `images.env` 追加 `@sha256` because 当前部署不需要摘要约束
 
 首次部署把这组消费文件放进独立服务目录，不复制源码构建覆盖文件。先拉取三个私有镜像，再生成本实例的随机密钥和管理员密码，无需在部署主机安装 Node：
 
@@ -49,7 +51,7 @@ docker compose --env-file .env --env-file images.env exec -T web \
   node scripts/smoke.ts --base http://localhost:3000
 ```
 
-后续更新重复构建和发布。部署前保留上一版 `docker-compose.yml`、`images.env` 和 `deploy/`，替换为新版本的对应文件，再执行拉取、启动及验证命令；不覆盖本实例的 `.env`，不删除数据卷。需要回退时恢复上一版这组消费文件并启动，数据库能否回退遵循下面的迁移边界，不把镜像回退视为数据回退。
+后续更新重复构建和发布。新输入就绪后替换 `docker-compose.yml`、`images.env`、`.env.example` 和 `deploy/`，再执行拉取、启动及验证命令；不覆盖本实例的 `.env`，不删除数据卷。部署过程确需临时恢复文件时只在当次更新未完成期间使用，验证通过后清理，不在生产长期保留回退目录。数据库变更仍遵循下面的迁移边界，不把镜像切换视为数据回退。
 
 ### 数据库初始化与迁移
 
@@ -61,7 +63,7 @@ docker compose --env-file .env --env-file images.env exec -T web \
 
 `0002_domains.sql` 将既有信源、分析、公开投影及精选同步 payload 一次性赋为 AI；文章 ID、现有 revision、事实和故事 ID 保持不变。新分析按 `input_revision` 产出文章领域，人工纠正由 editorial override 持有。信源的 `domains` 只说明覆盖范围，不决定文章归属。日报、周报和月报改为 `(kind, scope, key)` 唯一身份：既有报告属于 `ai`，历史修订仍通过原 `report_id` 关联；`all` 概览不复制 AI 报告，由同一报告生产与补报路径独立生成。迁移不修改 `0001_core.sql`；完成后应用只读写这一套契约，不保留 runtime fallback，报告详情使用 `/:kind/:scope/:key`。
 
-部署这次变更前由部署方暂停旧 API 和 worker 并保留数据库快照，再执行 setup、新应用及验证。需要退回旧应用时，由部署方恢复部署前数据库快照和上一版消费文件，不能只换回旧镜像：旧应用只认识 `(kind, key)`，无法正确处理迁移后的多范围报告。恢复快照会舍弃快照之后的写入，部署方应先保留这段数据供核对。
+部署这次变更前由部署方暂停旧 API 和 worker，在当次更新期间保留数据库快照，再执行 setup、新应用及验证。验证成功后清理该次快照，不长期保留生产回退目录。若验证完成前需要退回旧应用，必须同时恢复部署前数据库快照和上一版消费文件，不能只换回旧镜像：旧应用只认识 `(kind, key)`，无法正确处理迁移后的多范围报告。恢复快照会舍弃快照之后的写入，部署方应先保留这段数据供核对。
 
 升级后的短暂排行窗口由已有任务自然收敛：旧应用写入的 `hot_rankings` 快照只存全球 Top 10，更新后领域视图先从该旧快照中筛公开成员；同一现存排行任务下一次计算才会把所有全球达标候选写入快照，之后各领域即可从完整候选中过滤、选代表并取 Top 10。无需兼容代码、额外迁移或新增刷新机制。
 

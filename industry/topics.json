@@ -3,13 +3,13 @@
   "groups": [
     {
       "key": "company",
-      "name": "公司与模型",
-      "blurb": "按厂商与模型系追踪：谁发了什么、又赢了哪一局"
+      "name": "机构与主体",
+      "blurb": "按公司、机构与产品追踪持续进展"
     },
     {
       "key": "field",
-      "name": "技术方向",
-      "blurb": "按技术领域深挖：Agent、多模态、具身智能……"
+      "name": "专业方向",
+      "blurb": "按技术、医学、法律、国防与治理方向浏览"
     },
     {
       "key": "genre",
@@ -470,7 +470,7 @@
       "tags": [
         "产品更新"
       ],
-      "definition": "AI 产品与应用的功能上新、改版与商业化动态——谁家的产品变强了、变贵了、能用了。",
+      "definition": "产品、应用、药品与器械的正式发布、更新、审批和可用性变化。",
       "related": [
         "model-releases",
         "industry",
@@ -484,7 +484,7 @@
       "tags": [
         "论文/研究"
       ],
-      "definition": "值得读的 AI 论文与研究成果：架构创新、训练方法、能力测量与理论进展的精选解读。",
+      "definition": "医学、法律、军事、政策与技术领域值得读的论文和研究成果，保留证据、研究阶段与局限。",
       "related": [
         "reasoning",
         "safety",
@@ -553,7 +553,7 @@
       "tags": [
         "行业动态"
       ],
-      "definition": "AI 行业的商业脉搏：融资并购、人事变动、合作与竞争、政策与市场信号。",
+      "definition": "产业与商业动态：融资并购、人事变动、合作与竞争、政策与市场信号。",
       "related": [
         "trends",
         "opinions",
@@ -567,12 +567,30 @@
       "tags": [
         "政策/监管"
       ],
-      "definition": "AI 相关政策法规与政府监管动态：立法进展、出口管制与全球治理框架的追踪。",
+      "definition": "公共政策、法规与政府监管动态：立法进展、实施结果、产业监管与治理框架的追踪。",
       "related": [
-        "industry",
-        "safety",
-        "trends"
+        "legislation",
+        "governance",
+        "industry"
       ]
-    }
+    },
+    { "slug": "vllm", "name": "vLLM", "group": "company", "entityId": "vllm", "tags": ["entity:vllm"], "definition": "vLLM 推理引擎的正式版本、性能、部署与开源生态进展。", "related": ["engineering", "open-source"] },
+    { "slug": "who", "name": "世界卫生组织", "group": "company", "entityId": "who", "tags": ["WHO", "entity:who"], "definition": "世界卫生组织的公共卫生通报、指南与全球卫生行动。", "related": ["public-health", "governance"] },
+    { "slug": "china-state-council", "name": "国务院", "group": "company", "entityId": "china-state-council", "tags": ["国务院", "entity:china-state-council"], "definition": "国务院政策文件、决策部署与政策实施进展。", "related": ["policy", "governance"] },
+    { "slug": "china-supreme-court", "name": "最高人民法院", "group": "company", "entityId": "china-supreme-court", "tags": ["最高人民法院", "entity:china-supreme-court"], "definition": "最高人民法院的司法解释、典型案例与审判工作进展。", "related": ["judiciary", "legislation"] },
+    { "slug": "clinical-research", "name": "临床研究", "group": "field", "tags": ["临床研究"], "definition": "临床试验、治疗效果、不良事件与长期随访证据，保留研究阶段和适用人群。", "related": ["medicines", "medical-devices", "papers"] },
+    { "slug": "medicines", "name": "药品", "group": "field", "tags": ["药品"], "definition": "药物研发、审批、疗效、安全性与可及性的持续进展。", "related": ["clinical-research", "public-health"] },
+    { "slug": "medical-devices", "name": "医疗器械", "group": "field", "tags": ["医疗器械"], "definition": "医疗器械的研发、临床验证、审批与实际使用。", "related": ["clinical-research", "care"] },
+    { "slug": "public-health", "name": "公共卫生", "group": "field", "tags": ["公共卫生"], "definition": "疾病监测、预防、卫生服务与人群健康证据。", "related": ["who", "care", "governance"] },
+    { "slug": "care", "name": "诊疗", "group": "field", "tags": ["诊疗"], "definition": "诊疗指南、临床实践与医疗服务变化，不把初步研究改写成诊疗建议。", "related": ["clinical-research", "public-health"] },
+    { "slug": "legislation", "name": "立法", "group": "field", "tags": ["立法"], "definition": "法案、立法程序、法律法规与司法解释的制定、通过和生效。", "related": ["judiciary", "policy", "rights"] },
+    { "slug": "judiciary", "name": "司法与案件", "group": "field", "tags": ["司法/案件"], "definition": "裁判、诉讼与案件进展，区分指控、程序阶段和已生效裁判。", "related": ["china-supreme-court", "enforcement", "rights"] },
+    { "slug": "enforcement", "name": "执法", "group": "field", "tags": ["执法"], "definition": "行政与刑事执法、调查、处罚和执行进展。", "related": ["judiciary", "rights", "policy"] },
+    { "slug": "rights", "name": "权利保障", "group": "field", "tags": ["权利保障"], "definition": "权利义务、司法救济与保障措施的规则和实际影响。", "related": ["legislation", "judiciary"] },
+    { "slug": "defence", "name": "国防与战略", "group": "field", "tags": ["国防/战略"], "definition": "国防政策、战略判断与安全研究，保留来源与证据边界。", "related": ["military-operations", "military-equipment", "policy"] },
+    { "slug": "military-operations", "name": "军事行动", "group": "field", "tags": ["军事行动"], "definition": "军事行动、武装冲突与局势进展，区分来源声称与已核实事实。", "related": ["defence", "military-equipment"] },
+    { "slug": "military-equipment", "name": "军事装备", "group": "field", "tags": ["军事装备"], "definition": "军事装备的试验、采购、交付与服役，不把装备型号当作 AI 模型版本。", "related": ["defence", "military-operations"] },
+    { "slug": "policy-implementation", "name": "政策实施", "group": "field", "tags": ["政策实施"], "definition": "政策实施、配套措施、效果评估与受影响群体的进展。", "related": ["policy", "governance"] },
+    { "slug": "governance", "name": "公共治理", "group": "field", "tags": ["公共治理"], "definition": "公共服务、治理机制、政府决策与问责的持续变化。", "related": ["policy-implementation", "rights", "public-health"] }
   ]
 }

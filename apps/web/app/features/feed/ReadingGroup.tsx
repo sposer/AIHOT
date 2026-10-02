@@ -6,11 +6,14 @@ import { Collapse } from "../../components/ui/Presence";
 import type { Development, GroupInfo, GroupReport, TimelineFilters } from "@aihot/contracts/site";
 import { IconArrowUpRight, IconChevronDown } from "../../components/icons";
 import { monthDayTime, shortSourceName } from "../../lib/format";
+import { listPath } from "../../lib/seo";
 import { isReload } from "./restore";
 import { sessionCache } from "./session-cache";
 
 function filterParams(filters: TimelineFilters | undefined, cursor: string | null) {
   const sp = new URLSearchParams();
+  if (filters?.domain) sp.set("domain", filters.domain);
+  if (filters?.topic) sp.set("topic", filters.topic);
   if (filters?.channel && filters.channel !== "all") sp.set("channel", filters.channel);
   if (filters?.category) sp.set("category", filters.category);
   if (filters?.tag) sp.set("tag", filters.tag);
@@ -219,7 +222,7 @@ export function GroupDevelopments({ group, filters, parentId }: { group: GroupIn
           ))}
         </ol>
         <LoadState loading={state.loading} error={state.error} next={state.next} empty={state.items.length === 0} onMore={() => load(state.next)} onRetry={() => load(null)} />
-        <Link to={`/story/${group.story.publicId}`} className="mt-1 inline-flex items-center gap-0.5 py-1 text-[12.5px] font-medium text-accent hover:text-accent-ink">
+        <Link to={listPath(`/story/${group.story.publicId}`, { domain: filters?.domain })} className="mt-1 inline-flex items-center gap-0.5 py-1 text-[12.5px] font-medium text-accent hover:text-accent-ink">
           查看完整事件 <IconArrowUpRight size={12} />
         </Link>
       </Panel>

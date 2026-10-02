@@ -1,5 +1,5 @@
 // Reading the latest published hot ranking. The web shows heat values; machine exits only ranks.
-import type { HotParticipant, HotStripEntry } from "@aihot/contracts/site";
+import type { HotParticipant } from "@aihot/contracts/site";
 import { sql } from "../db.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 
@@ -57,25 +57,26 @@ async function queryLatestHotRanking(): Promise<HotRanking | null> {
   return { id: row.id, computedAt: row.computed_at.toISOString(), ruleVersion: row.rule_version, entries: row.entries, coverage: row.evidence };
 }
 
-// Faces and words change only with the ranking, so they are read once per ranking.
+// Cache faces and words by ranking and projected story set; domains can expose different candidates.
 interface Extras {
   faces: Map<string, string | null>;
   texts: Map<number, { summary: string | null; latest: string | null }>;
 }
-let extrasCache: { rankingId: number; extras: Extras } | null = null;
-const extrasPending = new Map<number, Promise<Extras>>();
+let extrasCache: { key: string; extras: Extras } | null = null;
+const extrasPending = new Map<string, Promise<Extras>>();
 
 async function readExtras(ranking: HotRanking): Promise<Extras> {
-  if (extrasCache?.rankingId === ranking.id) return extrasCache.extras;
-  const pending = extrasPending.get(ranking.id);
+  const key = `${ranking.id}:${ranking.entries.map((e) => e.storyId).join(",")}`;
+  if (extrasCache?.key === key) return extrasCache.extras;
+  const pending = extrasPending.get(key);
   if (pending) return pending;
-  const load = queryExtras(ranking);
-  extrasPending.set(ranking.id, load);
+  const load = queryExtras(ranking, key);
+  extrasPending.set(key, load);
   try { return await load; }
-  finally { extrasPending.delete(ranking.id); }
+  finally { extrasPending.delete(key); }
 }
 
-async function queryExtras(ranking: HotRanking): Promise<Extras> {
+async function queryExtras(ranking: HotRanking, key: string): Promise<Extras> {
   const ids = ranking.entries.map((e) => e.storyId);
   const [faces, texts] = await Promise.all([
     // A participant's face: the source's icon, else the avatar on that account's latest post in the story.
@@ -92,7 +93,7 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
     faces: new Map(faces.map((f) => [f.name, f.icon_url ?? f.avatar])),
     texts: new Map(texts.map((t) => [Number(t.id), { summary: t.digest ?? t.summary, latest: t.latest }])),
   };
-  extrasCache = { rankingId: ranking.id, extras };
+  extrasCache = { key, extras };
   return extras;
 }
 
@@ -117,21 +118,4 @@ export async function rankingExtras(ranking: HotRanking) {
     },
     text: (e: HotEntry) => texts.get(e.storyId) ?? { summary: null, latest: null },
   };
-}
-
-/** Home "current hot" strip: 3–5 entries from the same ranking, hidden when there are fewer than 3. */
-export async function loadHotStrip(): Promise<HotStripEntry[] | null> {
-  const ranking = await latestHotRanking();
-  if (!ranking || ranking.entries.length < 3) return null;
-  const extras = await rankingExtras(ranking);
-  return ranking.entries.slice(0, 5).map((e) => ({
-    rank: e.rank,
-    title: e.title,
-    heat: e.heat,
-    trend: e.trend,
-    storyPublicId: e.storyPublicId,
-    itemId: e.representativeItemId,
-    participants: extras.participants(e),
-    participantCount: e.participantCount,
-  }));
 }

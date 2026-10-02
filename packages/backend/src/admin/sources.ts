@@ -1,7 +1,7 @@
 // Source administration (F18): list, detail, preview (fetch without storing), edit, create with
 // duplicate checks, pause/resume and manual collection. Every change is audited.
 import { z } from "zod";
-import { DOMAIN_KEYS, normalizeDomains } from "@aihot/contracts/taxonomy";
+import { DOMAIN_KEYS, normalizeDomains, type DomainKey } from "@aihot/contracts/taxonomy";
 import { sql } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { republishKey } from "../jobs/publication.ts";
@@ -20,6 +20,7 @@ export class Conflict extends Error {
 }
 
 export interface SourceListFilters {
+  domain?: DomainKey;
   q?: string;
   kind?: string;
   health?: string;
@@ -32,12 +33,13 @@ export async function listSources(f: SourceListFilters) {
   const page = Math.max(1, f.page ?? 1);
   const q = f.q?.trim() ? `%${f.q.trim()}%` : null;
   const rows = await sql`
-    SELECT s.id, s.name, s.kind, s.tier, s.participation_mode, s.enabled, s.health, s.fail_count, s.interval_minutes,
+    SELECT s.id, s.name, s.kind, s.domains, s.tier, s.participation_mode, s.enabled, s.health, s.fail_count, s.interval_minutes,
            s.last_ok_at, s.last_fetch_at, s.last_error, s.first_party, s.next_fetch_at,
            (SELECT count(*)::int FROM articles a WHERE a.source_id = s.id AND a.discovered_at > now() - interval '7 days') AS items_7d,
            (SELECT count(*)::int FROM publications p WHERE p.source_id = s.id AND p.selected AND p.discovered_at > now() - interval '30 days') AS selected_30d
     FROM sources s
     WHERE (${q}::text IS NULL OR s.name ILIKE ${q} OR s.id ILIKE ${q} OR s.config::text ILIKE ${q})
+      AND (${f.domain ?? null}::text IS NULL OR s.domains @> ${f.domain ? [f.domain] : []}::text[])
       AND (${f.kind ?? null}::text IS NULL OR s.kind = ${f.kind ?? null})
       AND (${f.health ?? null}::text IS NULL OR s.health = ${f.health ?? null})
       AND (${f.mode ?? null}::text IS NULL OR s.participation_mode = ${f.mode ?? null})

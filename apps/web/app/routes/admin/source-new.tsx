@@ -1,4 +1,5 @@
 import { SITE } from "@aihot/industry/site";
+import { DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import type { Route } from "./+types/source-new";
@@ -27,7 +28,7 @@ interface Preview {
 export default function NewSource() {
   const navigate = useNavigate();
   const { run, pending } = useAdminAction();
-  const [form, setForm] = useState({ id: "", name: "", kind: "rss", tier: "T2", participation_mode: "editorial", interval_minutes: 30, first_party: false, site_fulltext: false, syndicate_fulltext: false, tags: "" });
+  const [form, setForm] = useState({ id: "", name: "", kind: "rss", tier: "T2", participation_mode: "editorial", interval_minutes: 30, first_party: false, site_fulltext: false, syndicate_fulltext: false, domains: [] as DomainKey[], tags: "" });
   const [config, setConfig] = useState(JSON.stringify(TEMPLATES.rss, null, 2));
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -82,6 +83,28 @@ export default function NewSource() {
             <Field label="标签（逗号分隔）">
               <Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} />
             </Field>
+            <fieldset className="sm:col-span-2">
+              <legend className="text-[12.5px] font-medium text-ink-2">信源覆盖领域</legend>
+              <p className="mt-1 text-[12px] text-ink-4">只表示信源长期覆盖范围；文章领域仍由模型按单篇内容判断</p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-ink-2">
+                {DOMAIN_KEYS.map((domain) => (
+                  <label key={domain} className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-[var(--accent)]"
+                      checked={form.domains.includes(domain)}
+                      onChange={(e) => {
+                        const next = new Set(form.domains);
+                        if (e.target.checked) next.add(domain);
+                        else next.delete(domain);
+                        setForm({ ...form, domains: DOMAIN_KEYS.filter((key) => next.has(key)) });
+                      }}
+                    />
+                    {DOMAIN_LABELS[domain]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <div className="flex flex-col justify-end gap-2 text-[13px] text-ink-2">
               {([
                 ["first_party", "一手信源"],

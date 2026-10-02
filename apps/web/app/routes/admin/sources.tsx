@@ -1,4 +1,5 @@
 import { SITE } from "@aihot/industry/site";
+import { DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
 import { Form, Link, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/sources";
 import { adminGet } from "../../lib/admin.server";
@@ -20,6 +21,7 @@ interface SourceRow {
   last_fetch_at: string | null;
   last_error: string | null;
   first_party: boolean;
+  domains: DomainKey[];
   next_fetch_at: string | null;
   items_7d: number;
   selected_30d: number;
@@ -57,7 +59,7 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
       <Card pad={false}>
         <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:justify-between">
           <Form method="get" className="flex w-full max-w-md gap-2" preventScrollReset>
-            {["kind", "health", "mode"].map((k) => sp.get(k) && <input key={k} type="hidden" name={k} value={sp.get(k)!} />)}
+            {["kind", "health", "mode", "domain"].map((k) => sp.get(k) && <input key={k} type="hidden" name={k} value={sp.get(k)!} />)}
             <Input name="q" defaultValue={sp.get("q") ?? ""} placeholder="名称、ID 或地址" aria-label="搜索信源" />
           </Form>
           <div className="flex flex-wrap items-center gap-3">
@@ -78,6 +80,21 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
               {Object.entries(KIND_LABEL).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
+            </Select>
+            <Select
+              aria-label="覆盖领域"
+              className="!w-auto"
+              value={sp.get("domain") ?? ""}
+              onChange={(e) => {
+                const next = new URLSearchParams(sp);
+                if (e.target.value) next.set("domain", e.target.value);
+                else next.delete("domain");
+                next.delete("page");
+                navigate(`?${next}`, { preventScrollReset: true });
+              }}
+            >
+              <option value="">全部领域</option>
+              {DOMAIN_KEYS.map((domain) => <option key={domain} value={domain}>{DOMAIN_LABELS[domain]}</option>)}
             </Select>
           </div>
         </div>
@@ -100,6 +117,18 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
               ),
             },
             { key: "kind", label: "类型", render: (r) => <Badge>{KIND_LABEL[r.kind] ?? r.kind}</Badge> },
+            {
+              key: "domains",
+              label: "覆盖领域",
+              render: (r) => {
+                const domains = r.domains;
+                return domains.length ? (
+                  <span className="flex flex-wrap gap-1">{domains.map((domain) => <Badge key={domain}>{DOMAIN_LABELS[domain]}</Badge>)}</span>
+                ) : (
+                  <span className="text-ink-4">未设置</span>
+                );
+              },
+            },
             {
               key: "mode",
               label: "参与",

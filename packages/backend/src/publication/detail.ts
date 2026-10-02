@@ -1,5 +1,6 @@
 // Item detail and Markdown export, both behind the same visibility and licence rules.
 import type { ItemDetail, SiteItemDetail, OutlineEntry, StoryRef } from "@aihot/contracts/site";
+import { normalizeDomains, type DomainKey } from "@aihot/contracts/taxonomy";
 import TurndownService from "turndown";
 import { sql } from "../db.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
@@ -104,11 +105,15 @@ export async function loadItemDetail(id: string, now = new Date()): Promise<Deta
 
   let group: ItemDetail["group"] = null;
   if (row.fact_id) {
-    const [g] = await sql<{ public_id: string; reports: number; sources: number }[]>`
-      SELECT f.public_id, count(p.article_id) AS reports, count(DISTINCT p.source_id) AS sources
+    const [g] = await sql<{ public_id: string; reports: number; sources: number; domains: DomainKey[] }[]>`
+      SELECT f.public_id, count(p.article_id) AS reports, count(DISTINCT p.source_id) AS sources,
+        ARRAY(SELECT DISTINCT unnest(pub.domains) FROM facts d JOIN fact_articles fa ON fa.fact_id = d.id
+              JOIN publications pub ON pub.article_id = fa.article_id
+              WHERE (CASE WHEN f.story_id IS NULL THEN d.id = f.id ELSE d.story_id = f.story_id END)
+                AND pub.visibility = 'public' AND pub.eligible AND (NOT pub.selected OR pub.visible_after <= ${now})) AS domains
       FROM facts f JOIN publications p ON p.fact_id = f.id
       WHERE f.id = ${row.fact_id} AND p.visibility = 'public' AND p.eligible AND (NOT p.selected OR p.visible_after <= ${now})
-      GROUP BY f.public_id`;
+      GROUP BY f.id, f.public_id`;
     const [dev] = await sql<{ n: number }[]>`
       SELECT count(DISTINCT other.id) AS n FROM facts f
       JOIN facts other ON other.story_id = f.story_id AND other.id <> f.id
@@ -117,6 +122,7 @@ export async function loadItemDetail(id: string, now = new Date()): Promise<Deta
     if (g) {
       group = {
         factId: g.public_id,
+        domains: normalizeDomains(g.domains),
         story: summary.story,
         reportCount: Number(g.reports),
         additionalSourceCount: Math.max(0, Number(g.sources) - 1),

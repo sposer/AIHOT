@@ -10,7 +10,10 @@ import { posterEtag } from "../apps/api/src/og/poster.ts";
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { MCP_TOOL_NAMES } from "@aihot/contracts/mcp";
 import { closeDb, sql } from "@aihot/backend/db";
 import { setVisibility, overrideFields } from "@aihot/backend/admin/content";
 import { updateSource } from "@aihot/backend/admin/sources";
@@ -53,7 +56,7 @@ async function article(domains: DomainKey[] = ["ai"], score = 90): Promise<strin
   return articleId;
 }
 
-async function storyFor(id: string, role: "report" | "mention" = "report"): Promise<string> {
+async function storyFor(id: string, role: "primary" | "report" | "mention" = "report"): Promise<string> {
   const publicId = randomUUID();
   const [story] = await sql<{ id: number }[]>`
     INSERT INTO stories (public_id, title, first_report_at, latest_at) VALUES (${publicId}, ${`STORY-${T}`}, now(), now()) RETURNING id`;
@@ -282,7 +285,7 @@ test("v1 story retains website content and fallback ordering without the website
     firstReportAt: site.firstReportAt, latestAt: site.latestAt, digest: site.digest, digestUpdatedAt: site.digestUpdatedAt });
   assert.equal(v1.latest, 'Latest development fallback');
   assert.deepEqual(v1.reports, site.timeline.slice(0, 50).map((r: any) => ({ id: r.id, title: r.title, summary: r.summary,
-    source: { name: r.source.name, firstParty: r.source.firstParty }, publishedAt: r.publishedAt,
+    domains: r.domains, source: { name: r.source.name, firstParty: r.source.firstParty }, publishedAt: r.publishedAt,
     links: { aihot: `${config.siteUrl}/items/${r.id}`, original: r.originalUrl } })));
   await sql`UPDATE publications SET visible_after = now() + interval '1 day' WHERE article_id = ${second}`;
   const gated = JSON.parse((await get(`/api/v1/stories/${publicId}`)).body).story;
@@ -389,9 +392,9 @@ test("minimal sync projection preserves snapshot fields, pagination bindings and
 test("domain filtering precedes fact representative choice and preserves the global group", async () => {
   const ai = await article(["ai"], 95);
   const medical = await article(["medical"], 80);
-  const story = await storyFor(medical);
+  const story = await storyFor(medical, "primary");
   const [fact] = await sql<{ id: number; public_id: string }[]>`SELECT f.id, f.public_id FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id WHERE fa.article_id = ${medical}`;
-  await sql`INSERT INTO fact_articles (fact_id, article_id, role) VALUES (${fact!.id}, ${ai}, 'report')`;
+  await sql`INSERT INTO fact_articles (fact_id, article_id, role) VALUES (${fact!.id}, ${ai}, 'primary')`;
   await publishArticle(ai, released());
   await publishArticle(medical, released());
   const overview = JSON.parse((await get("/api/site/timeline")).body).cards;
@@ -409,6 +412,34 @@ test("domain filtering precedes fact representative choice and preserves the glo
   assert.equal(allCard.group.story.publicId, medicalDetail.story.publicId);
   const expanded = JSON.parse((await get(`/api/site/groups/${fact!.public_id}/reports?domain=medical`)).body);
   assert.deepEqual(expanded.reports.map((r: any) => r.id), [medical]);
+  assert.deepEqual(allCard.group.domains, ["ai", "medical"]);
+  assert.deepEqual(medicalDetail.group.domains, ["ai", "medical"]);
+  const siteStory = JSON.parse((await get(`/api/site/stories/${story}?domain=medical`)).body);
+  const v1Story = JSON.parse((await get(`/api/v1/stories/${story}?domain=medical`)).body).story;
+  assert.deepEqual([siteStory.publicId, v1Story.publicId], [story, story]);
+  assert.deepEqual(siteStory.domains, ["ai", "medical"]);
+  assert.deepEqual(v1Story.domains, siteStory.domains);
+  assert.deepEqual(siteStory.timeline.map((r: any) => r.id), [medical]);
+  assert.deepEqual(v1Story.reports.map((r: any) => r.id), [medical]);
+  assert.equal(siteStory.reportCount, 1);
+  assert.equal(v1Story.reportCount, 1);
+  assert.deepEqual(siteStory.developments[0].domains, ["ai", "medical"]);
+  assert.equal(siteStory.developments[0].representative.id, medical);
+  assert.equal(new URL(v1Story.links.aihot).searchParams.get("domain"), "medical");
+  assert.equal(JSON.parse((await get(`/api/site/stories/${story}`)).body).reportCount, 2);
+  const overviewImage = await get(`/og/stories/${story}.png`);
+  assert.equal(overviewImage.status, 200);
+  const scopedImage = await get(`/og/stories/${story}.png?domain=medical`, { "if-none-match": overviewImage.etag! });
+  assert.equal(scopedImage.status, 200, "scoped counts produce a different share card");
+  assert.notEqual(scopedImage.etag, overviewImage.etag);
+  assert.equal((await get(`/og/stories/${story}.png?domain=medical`, { "if-none-match": scopedImage.etag! })).status, 304);
+  assert.equal((await get(`/og/stories/${story}.png?domain=legal`)).status, 404);
+  assert.equal((await get(`/api/site/stories/${story}?domain=legal`)).status, 404);
+  assert.equal((await get(`/api/v1/stories/${story}?domain=unknown`)).status, 400);
+  await setVisibility(ai, { visibility: "withdrawn", reason: "test derived domain refresh", version: 0 }, "test");
+  const remaining = JSON.parse((await get(`/api/site/stories/${story}?domain=medical`)).body);
+  assert.deepEqual(remaining.domains, ["medical"]);
+  assert.deepEqual(remaining.developments[0].domains, ["medical"]);
 });
 
 
@@ -436,4 +467,100 @@ test("every global upsert updates domain membership; remove only means global wi
   const delta = JSON.parse((await get(`/api/v1/selected/changes?cursor=${encodeURIComponent(cursor)}`)).body);
   assert.deepEqual(delta.changes.filter((c: any) => c.id === id).map((c: any) => c.op), ["remove"]);
   assert.equal((await get("/api/v1/selected/snapshot?domain=medical")).status, 400);
+});
+
+
+test("domain hot ranking finds global candidates beyond ten and filters members before representatives", async () => {
+  const ids: string[] = [];
+  const storyIds: number[] = [];
+  let rankingId: number | undefined;
+  const client = new Client({ name: "hot-scope-test", version: "1" }, { versionNegotiation: { mode: "auto" } });
+  // A disjoint heat window leaves other files' fixtures untouched.
+  const [last] = await sql<{ at: Date | null }[]>`SELECT max(observed_at) AS at FROM story_signals`;
+  const at = new Date(Math.max(Date.now(), last?.at?.getTime() ?? 0) + 3 * 86400_000);
+  const signals = async (storyId: number, articleIds: string[], observedAt: Date) => {
+    for (const [i, id] of articleIds.entries()) await sql`INSERT INTO story_signals (story_id, article_id, participant_key, source_id, kind, observed_at)
+      VALUES (${storyId}, ${id}, ${`${T}-${storyId}-${i}`}, ${SOURCE}, 'editorial', ${observedAt})`;
+  };
+  try {
+    for (let i = 0; i < 10; i++) {
+      const id = await article();
+      const evidence = await article();
+      ids.push(id, evidence);
+      const publicId = await storyFor(id);
+      const [s] = await sql<{ id: number }[]>`SELECT id FROM stories WHERE public_id = ${publicId}`;
+      storyIds.push(s!.id);
+      await publishArticle(id, released());
+      await signals(s!.id, [id, evidence], new Date(at.getTime() - 60_000));
+    }
+    const ai = await article(["ai"], 95);
+    const medical = await article(["medical", "policy"], 80);
+    ids.push(ai, medical);
+    const publicId = await storyFor(medical, "primary");
+    const [s] = await sql<{ id: number; fact_id: number }[]>`SELECT st.id, f.id AS fact_id FROM stories st JOIN facts f ON f.story_id = st.id WHERE st.public_id = ${publicId}`;
+    storyIds.push(s!.id);
+    await sql`INSERT INTO fact_articles (fact_id, article_id, role) VALUES (${s!.fact_id}, ${ai}, 'primary')`;
+    const summary = `Shared story summary ${T}`;
+    await sql`UPDATE stories SET summary = ${summary} WHERE id = ${s!.id}`;
+    const aiCover = `https://example.com/${T}/ai-cover.png`;
+    const medicalCover = `https://example.com/${T}/medical-cover.png`;
+    for (const [id, url] of [[ai, aiCover], [medical, medicalCover]]) {
+      await sql`UPDATE articles SET media = ${sql.json([{ kind: "image", url, width: 800 }])} WHERE id = ${id!}`;
+      await publishArticle(id!, released());
+    }
+    await signals(s!.id, [ai, medical], new Date(at.getTime() - 3 * 3600_000));
+    rankingId = (await computeHotRanking(at)).id;
+    const ranking = (await latestHotRanking())!;
+    const raw = ranking.entries.find((e) => e.storyPublicId === publicId)!;
+    assert.ok(ranking.entries.indexOf(raw) >= 10, "the medical candidate really is beyond the global ten");
+    assert.equal(raw.representativeItemId, ai);
+    const overview = JSON.parse((await get("/api/site/hot")).body);
+    assert.equal(overview.entries.length, 10);
+    assert.ok(!overview.entries.some((e: any) => e.story.publicId === publicId));
+    const scoped = JSON.parse((await get("/api/site/hot?domain=medical")).body);
+    const entry = scoped.entries.find((e: any) => e.story.publicId === publicId);
+    assert.ok(entry);
+    assert.equal(entry.rank, 1);
+    assert.equal(entry.representative.id, medical);
+    assert.equal(entry.reportCount, 1);
+    assert.equal(entry.heat, raw.heat, "scope changes membership and rank, not heat");
+    assert.deepEqual(entry.domains, ["ai", "medical", "policy"]);
+    assert.equal(entry.summary, summary, "the overview extras cache cannot omit a domain-only candidate");
+    assert.equal(new URL(entry.cover.url, config.siteUrl).searchParams.get("u"), medicalCover);
+    const v1 = JSON.parse((await get("/api/v1/hot-topics?domain=medical")).body).items.find((e: any) => e.id === medical);
+    assert.equal(v1.rank, 1);
+    assert.deepEqual(v1.domains, entry.domains);
+    assert.equal(new URL(v1.links.story).pathname, `/story/${publicId}`);
+    assert.equal(new URL(v1.links.story).searchParams.get("domain"), "medical");
+    assert.equal("heat" in v1, false);
+    // Same snapshot, different current member sets and representatives: caches must follow both.
+    await setVisibility(ids[0]!, { visibility: "withdrawn", reason: "test hot projection", version: 0 }, "test");
+    const aiEntries = JSON.parse((await get("/api/site/hot?domain=ai")).body).entries;
+    const aiEntry = aiEntries.find((e: any) => e.story.publicId === publicId);
+    assert.equal(aiEntry.representative.id, ai);
+    assert.equal(new URL(aiEntry.cover.url, config.siteUrl).searchParams.get("u"), aiCover);
+    const refreshed = JSON.parse((await get("/api/site/hot?domain=medical")).body).entries.find((e: any) => e.story.publicId === publicId);
+    assert.equal(new URL(refreshed.cover.url, config.siteUrl).searchParams.get("u"), medicalCover);
+    assert.equal((await get("/api/v1/hot-topics?domain=unknown")).status, 400);
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const port = (app.server.address() as AddressInfo).port;
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/api/mcp`)));
+    await client.callTool({ name: MCP_TOOL_NAMES.hot });
+    const hotTool = await client.callTool({ name: MCP_TOOL_NAMES.hot, arguments: { domain: "medical" } });
+    assert.equal(hotTool.isError, undefined);
+    assert.equal((hotTool.structuredContent as any).items[0].id, medical);
+    const storyTool = await client.callTool({ name: MCP_TOOL_NAMES.story, arguments: { domain: "medical", public_id: publicId } });
+    assert.equal(storyTool.isError, undefined);
+    const toolStory = (storyTool.structuredContent as any).story;
+    assert.equal(toolStory.publicId, publicId);
+    assert.deepEqual(toolStory.reports.map((r: any) => r.id), [medical]);
+  } finally {
+    await client.close();
+    if (rankingId) await sql`DELETE FROM hot_rankings WHERE id = ${rankingId}`;
+    if (storyIds.length) {
+      await sql`DELETE FROM facts WHERE story_id = ANY(${storyIds}::bigint[])`;
+      await sql`DELETE FROM stories WHERE id = ANY(${storyIds}::bigint[])`;
+    }
+    if (ids.length) await sql`DELETE FROM articles WHERE id = ANY(${ids}::text[])`;
+  }
 });

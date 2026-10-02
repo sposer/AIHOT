@@ -1,6 +1,7 @@
 // Stories (events) and the hot ranking through the public read layer. The website sees heat values;
 // v1 / MCP / Skill only see ranks and counts.
-import type { HeatPoint, HotResponse, StoryDetail, StoryReportView } from "@aihot/contracts/site";
+import type { HeatPoint, HotResponse, HotStripEntry, StoryDetail, StoryReportView } from "@aihot/contracts/site";
+import { normalizeDomains, type DomainKey } from "@aihot/contracts/taxonomy";
 import { sql } from "../db.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { latestHotRanking, rankingExtras } from "../events/hot-read.ts";
@@ -8,6 +9,7 @@ import { behindSources, sourceClocks } from "../events/hot.ts";
 import { storyStatusFor } from "../events/digest.ts";
 import { itemUrl, storyApiUrl, storyUrl } from "./links.ts";
 import { SITE } from "@aihot/industry/site";
+import { domainCondition } from "./items.ts";
 
 export type StoryLookup = { kind: "found"; storyId: number; publicId: string } | { kind: "merged"; target: string } | { kind: "not_found" };
 
@@ -40,6 +42,7 @@ interface ReportRow {
   summary: string | null;
   url: string;
   selected: boolean;
+  domains: DomainKey[];
   at: Date;
   source_id: string;
   source_name: string;
@@ -53,18 +56,18 @@ interface ReportRow {
 /**
  * Every report linked to the story's facts that has a public page (rules.hasItemPage: editorial source,
  * summarised or not), mentions included (an article's other events). New grouping only links
- * pool-eligible articles; imported hot stories also carry reports the AI pool leaves out, which the live
+ * pool-eligible articles; imported hot stories also carry reports the public pool leaves out, which the live
  * pages showed. hot_signal material only adds heat and is not listed, as on the live pages.
  */
-async function storyReports(storyId: number, now: Date): Promise<ReportRow[]> {
+async function storyReports(storyId: number, now: Date, domain: DomainKey | null): Promise<ReportRow[]> {
   return sql<ReportRow[]>`
-    SELECT DISTINCT ON (p.article_id) p.article_id AS id, p.title, p.summary, p.url, p.selected,
+    SELECT DISTINCT ON (p.article_id) p.article_id AS id, p.title, p.summary, p.url, p.selected, p.domains,
       coalesce(p.published_at, p.discovered_at) AS at, s.id AS source_id, s.name AS source_name, s.kind AS source_kind,
       p.first_party, s.icon_url, f.public_id AS fact_public_id, f.id AS fact_id
     FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
     JOIN sources s ON s.id = p.source_id
     WHERE f.story_id = ${storyId} AND p.visibility = 'public' AND s.participation_mode = 'editorial'
-      AND (NOT p.selected OR p.visible_after <= ${now})
+      AND (NOT p.selected OR p.visible_after <= ${now}) ${domainCondition(domain)}
     ORDER BY p.article_id, (fa.role = 'primary') DESC`;
 }
 
@@ -77,16 +80,27 @@ function reportView(r: ReportRow): StoryReportView {
     publishedAt: r.at.toISOString(),
     originalUrl: r.url,
     selected: r.selected,
+    domains: r.domains,
     factId: r.fact_public_id,
   };
 }
 
-async function storyContent(storyId: number, now: Date) {
+async function storyContent(storyId: number, now: Date, domain: DomainKey | null) {
   const [s] = await sql<{ public_id: string; title: string; summary: string | null; first_report_at: Date | null; latest_at: Date | null; digest: string | null; digest_updated_at: Date | null; latest: string | null }[]>`
     SELECT public_id::text, title, summary, first_report_at, latest_at, digest, digest_updated_at, latest FROM stories WHERE id = ${storyId}`;
   if (!s) return null;
-  const reports = await storyReports(storyId, now);
+  const reports = await storyReports(storyId, now, domain);
   if (reports.length === 0) return null;
+  // Domain metadata belongs to the global fact/story, derived from their currently public reports.
+  // The scoped member read above still owns representatives, counts and the report timeline.
+  const domainRows = await sql<{ fact_id: number; domains: DomainKey[] }[]>`
+    SELECT f.id AS fact_id, p.domains FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id
+    JOIN publications p ON p.article_id = fa.article_id JOIN sources s ON s.id = p.source_id
+    WHERE f.story_id = ${storyId} AND p.visibility = 'public' AND s.participation_mode = 'editorial'
+      AND (NOT p.selected OR p.visible_after <= ${now})`;
+  const factDomains = new Map<number, DomainKey[]>();
+  for (const r of domainRows) factDomains.set(r.fact_id, normalizeDomains([...(factDomains.get(r.fact_id) ?? []), ...r.domains]));
+  const domains = normalizeDomains(domainRows.flatMap((r) => r.domains));
   reports.sort((a, b) => b.at.getTime() - a.at.getTime());
 
   const byFact = new Map<number, ReportRow[]>();
@@ -99,30 +113,35 @@ async function storyContent(storyId: number, now: Date) {
       const members = byFact.get(f.id)!;
       const rep = [...members].sort((a, b) => Number(b.first_party) - Number(a.first_party) || Number(b.selected) - Number(a.selected) || a.at.getTime() - b.at.getTime())[0]!;
       const first = members.reduce((m, r) => (r.at < m ? r.at : m), members[0]!.at);
-      return { factId: f.public_id, title: f.title, occurredAt: f.occurred_at?.toISOString() ?? null, firstReportAt: first.toISOString(), reportCount: members.length, representative: rep };
+      return { factId: f.public_id, title: f.title, domains: factDomains.get(f.id) ?? [], occurredAt: f.occurred_at?.toISOString() ?? null, firstReportAt: first.toISOString(), reportCount: members.length, representative: rep };
     })
     .sort((a, b) => Date.parse(b.firstReportAt) - Date.parse(a.firstReportAt));
 
-  return { s, reports, developments };
+  return { s, domains, reports, developments };
 }
 
-async function relatedStories(storyId: number) {
+async function relatedStories(storyId: number, now: Date, domain: DomainKey | null) {
   return sql<{ public_id: string; title: string; relation: "storyline" | "related"; latest_at: Date | null }[]>`
     SELECT st.public_id::text, st.title, l.relation, st.latest_at FROM story_links l JOIN stories st ON st.id = l.other_id
-    WHERE l.story_id = ${storyId} AND st.merged_into IS NULL ORDER BY st.latest_at DESC NULLS LAST LIMIT 8`;
+    WHERE l.story_id = ${storyId} AND st.merged_into IS NULL AND EXISTS (
+      SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
+      JOIN sources s ON s.id = p.source_id
+      WHERE f.story_id = st.id AND p.visibility = 'public' AND s.participation_mode = 'editorial'
+        AND (NOT p.selected OR p.visible_after <= ${now}) ${domainCondition(domain)})
+    ORDER BY st.latest_at DESC NULLS LAST LIMIT 8`;
 }
 
-export async function loadStoryDetail(storyId: number, now = new Date()): Promise<StoryDetail | null> {
-  const content = await storyContent(storyId, now);
+export async function loadStoryDetail(storyId: number, now = new Date(), domain: DomainKey | null = null): Promise<StoryDetail | null> {
+  const content = await storyContent(storyId, now, domain);
   if (!content) return null;
-  const { s, reports, developments } = content;
+  const { s, domains, reports, developments } = content;
   const [why] = await sql<{ p48: number; p6: number; r24: number }[]>`
     SELECT count(DISTINCT participant_key) FILTER (WHERE observed_at > ${now}::timestamptz - interval '48 hours') AS p48,
            count(DISTINCT participant_key) FILTER (WHERE observed_at > ${now}::timestamptz - interval '6 hours'
              AND participant_key NOT IN (SELECT participant_key FROM story_signals x WHERE x.story_id = ${storyId} AND x.observed_at <= ${now}::timestamptz - interval '6 hours')) AS p6,
            count(*) FILTER (WHERE kind = 'editorial' AND observed_at > ${now}::timestamptz - interval '24 hours') AS r24
     FROM story_signals WHERE story_id = ${storyId} AND observed_at <= ${now}`;
-  const ranking = await latestHotRanking();
+  const ranking = await publicHotRanking(domain);
   const entry = ranking?.entries.find((e) => e.storyId === storyId) ?? null;
   // Only hours observed in full are drawn (the chart leaves a gap otherwise).
   const heat = await sql<{ hour: Date; heat: number; participants: number }[]>`
@@ -133,13 +152,14 @@ export async function loadStoryDetail(storyId: number, now = new Date()): Promis
     ? await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM story_signals WHERE story_id = ${storyId} AND source_id = ANY(${behind}::text[])
                                   AND observed_at > ${now}::timestamptz - interval '48 hours' AND observed_at <= ${now}`
     : [{ n: 0 }];
-  const related = await relatedStories(storyId);
+  const related = await relatedStories(storyId, now, domain);
   const latestAt = s.latest_at ?? reports[0]!.at;
   // Without a digest or a summary of its own, the story opens with its first development's representative report.
   const origin = developments[developments.length - 1]?.representative;
   return {
     publicId: s.public_id,
     title: s.title,
+    domains,
     status: storyStatusFor(latestAt, now.getTime()),
     reportCount: reports.length,
     sourceCount: new Set(reports.map((r) => r.source_id)).size,
@@ -186,26 +206,27 @@ async function sparklines(storyIds: number[], at: Date): Promise<Map<number, Arr
   return out;
 }
 
-// Pictures for a ranking change only with the ranking, so they are read once per ranking.
+// Covers follow the projected member set, including domain-specific representative changes.
 type HotCoverMap = Map<number, { url: string; width: number | null; height: number | null }>;
-let coversCache: { rankingId: number; covers: HotCoverMap } | null = null;
-const coversPending = new Map<number, Promise<HotCoverMap>>();
+let coversCache: { key: string; covers: HotCoverMap } | null = null;
+const coversPending = new Map<string, Promise<HotCoverMap>>();
 
 /** A picture per story from its public full-text reports, the representative first, wide enough for a card. */
-async function hotCovers(rankingId: number, entries: Array<{ storyId: number; representativeItemId: string | null }>, at: Date) {
-  if (coversCache?.rankingId === rankingId) return coversCache.covers;
-  const pending = coversPending.get(rankingId);
+async function hotCovers(rankingId: number, entries: Array<{ storyId: number; representativeItemId: string | null }>, at: Date, domain: DomainKey | null) {
+  const key = `${rankingId}:${domain ?? "all"}:${entries.map((e) => `${e.storyId}:${e.representativeItemId}`).join(",")}`;
+  if (coversCache?.key === key) return coversCache.covers;
+  const pending = coversPending.get(key);
   if (pending) return pending;
-  const load = queryHotCovers(entries, at);
-  coversPending.set(rankingId, load);
+  const load = queryHotCovers(entries, at, domain);
+  coversPending.set(key, load);
   try {
     const covers = await load;
-    coversCache = { rankingId, covers };
+    coversCache = { key, covers };
     return covers;
-  } finally { coversPending.delete(rankingId); }
+  } finally { coversPending.delete(key); }
 }
 
-async function queryHotCovers(entries: Array<{ storyId: number; representativeItemId: string | null }>, at: Date) {
+async function queryHotCovers(entries: Array<{ storyId: number; representativeItemId: string | null }>, at: Date, domain: DomainKey | null) {
   const ids = entries.map((e) => e.storyId);
   const reps = entries.map((e) => e.representativeItemId).filter((id): id is string => !!id);
   const rows = await sql<{ story_id: number; m: { url: string; width?: number; height?: number } }[]>`
@@ -216,14 +237,56 @@ async function queryHotCovers(entries: Array<{ storyId: number; representativeIt
       WHERE m->>'kind' = 'image' AND coalesce((m->>'width')::numeric, 800) >= 480 LIMIT 1
     ) img
     WHERE p.story_id = ANY(${ids}::bigint[]) AND p.visibility = 'public' AND p.eligible AND p.body_mode <> 'summary'
-      AND (NOT p.selected OR p.visible_after <= ${at})
+      AND (NOT p.selected OR p.visible_after <= ${at}) ${domainCondition(domain)}
     ORDER BY p.story_id, (p.article_id::text = ANY(${reps}::text[])) DESC, p.first_party DESC, p.selected DESC, coalesce(p.score, 0) DESC, p.article_id`;
   const covers = new Map(rows.map((c) => [Number(c.story_id), { url: c.m.url, width: typeof c.m.width === "number" ? c.m.width : null, height: typeof c.m.height === "number" ? c.m.height : null }]));
   return covers;
 }
 
-export async function loadHot(): Promise<HotResponse> {
+/** One global heat snapshot; current public members define each scope and its representative. */
+async function publicHotRanking(domain: DomainKey | null = null) {
   const ranking = await latestHotRanking();
+  if (!ranking) return null;
+  const ids = ranking.entries.map((e) => e.storyId);
+  const rows = ids.length ? await sql<{
+    story_id: number; id: string; url: string; source_name: string; report_count: number; domains: DomainKey[];
+  }[]>`
+    WITH members AS (
+      SELECT DISTINCT f.story_id, p.article_id AS id, p.url, s.name AS source_name, p.first_party, p.selected, p.score, p.domains
+      FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
+      JOIN sources s ON s.id = p.source_id
+      WHERE f.story_id = ANY(${ids}::bigint[]) AND p.visibility = 'public' AND p.eligible
+        AND (NOT p.selected OR p.visible_after <= ${new Date()})
+    ), scoped AS (
+      SELECT p.* FROM members p WHERE true ${domainCondition(domain)}
+    )
+    SELECT DISTINCT ON (story_id) story_id, id, url, source_name,
+      count(*) OVER (PARTITION BY story_id)::int AS report_count,
+      ARRAY(SELECT DISTINCT unnest(m.domains) FROM members m WHERE m.story_id = scoped.story_id) AS domains
+    FROM scoped ORDER BY story_id, first_party DESC, selected DESC, coalesce(score, 0) DESC, id` : [];
+  const representatives = new Map(rows.map((r) => [Number(r.story_id), r]));
+  const entries = ranking.entries.flatMap((e) => {
+    const rep = representatives.get(e.storyId);
+    return rep ? [{ ...e, domains: normalizeDomains(rep.domains), reportCount: rep.report_count,
+      representativeItemId: rep.id, representativeUrl: rep.url, representativeSource: rep.source_name }] : [];
+  }).slice(0, 10).map((e, i) => ({ ...e, rank: i + 1 }));
+  return { ...ranking, entries };
+}
+
+/** Home strip and the hot board share the same public projection. */
+export async function loadHotStrip(domain: DomainKey | null = null): Promise<HotStripEntry[] | null> {
+  const ranking = await publicHotRanking(domain);
+  if (!ranking || ranking.entries.length < 3) return null;
+  const extras = await rankingExtras(ranking);
+  return ranking.entries.slice(0, 5).map((e) => ({
+    rank: e.rank, title: e.title, domains: e.domains, heat: e.heat, trend: e.trend,
+    storyPublicId: e.storyPublicId, itemId: e.representativeItemId,
+    participants: extras.participants(e), participantCount: e.participantCount,
+  }));
+}
+
+export async function loadHot(domain: DomainKey | null = null): Promise<HotResponse> {
+  const ranking = await publicHotRanking(domain);
   if (!ranking) return { computedAt: null, ruleVersion: null, windowHours: 48, entries: [] };
   const at = new Date(ranking.computedAt);
   const [sparks, covers, extras] = await Promise.all([
@@ -231,7 +294,7 @@ export async function loadHot(): Promise<HotResponse> {
       ranking.entries.map((e) => e.storyId),
       at,
     ),
-    hotCovers(ranking.id, ranking.entries, at),
+    hotCovers(ranking.id, ranking.entries, new Date(), domain),
     rankingExtras(ranking),
   ]);
   return {
@@ -244,6 +307,7 @@ export async function loadHot(): Promise<HotResponse> {
       const text = extras.text(e);
       return {
         rank: e.rank,
+        domains: e.domains,
         story: { publicId: e.storyPublicId, title: e.title },
         heat: e.heat,
         trend: e.trend,
@@ -271,17 +335,18 @@ export async function loadHot(): Promise<HotResponse> {
 // v1 shapes (ranks and counts only; no heat values)
 // ---------------------------------------------------------------------------
 
-export async function v1HotTopics() {
-  const ranking = await latestHotRanking();
+export async function v1HotTopics(domain: DomainKey | null = null) {
+  const ranking = await publicHotRanking(domain);
   const items = (ranking?.entries ?? []).map((e) => ({
     rank: e.rank,
     id: e.representativeItemId ?? e.storyPublicId,
     title: e.title,
+    domains: e.domains,
     source: { name: e.representativeSource ?? e.sourceNames[0] ?? SITE.name },
     links: {
       aihot: e.representativeItemId ? itemUrl(e.representativeItemId) : storyUrl(e.storyPublicId),
       original: e.representativeUrl ?? storyUrl(e.storyPublicId),
-      story: storyUrl(e.storyPublicId),
+      story: storyUrl(e.storyPublicId, domain),
     },
     sourceCount: e.sourceCount,
     signalCount: e.signalCount,
@@ -292,18 +357,19 @@ export async function v1HotTopics() {
   return { schemaVersion: 1 as const, count: items.length, items };
 }
 
-export async function v1Story(storyId: number) {
+export async function v1Story(storyId: number, domain: DomainKey | null = null) {
   const now = new Date();
-  const content = await storyContent(storyId, now);
+  const content = await storyContent(storyId, now, domain);
   if (!content) return null;
-  const { s, reports, developments } = content;
+  const { s, domains, reports, developments } = content;
   const latestAt = s.latest_at ?? reports[0]!.at;
-  const neighbors = (await relatedStories(storyId)).map((r) => ({ publicId: r.public_id, title: r.title, relation: r.relation, links: { aihot: storyUrl(r.public_id), api: storyApiUrl(r.public_id) } }));
+  const neighbors = (await relatedStories(storyId, now, domain)).map((r) => ({ publicId: r.public_id, title: r.title, relation: r.relation, links: { aihot: storyUrl(r.public_id, domain), api: storyApiUrl(r.public_id, domain) } }));
   return {
     schemaVersion: 1 as const,
     story: {
       publicId: s.public_id,
       title: s.title,
+      domains,
       status: storyStatusFor(latestAt, now.getTime()) === "settled" ? ("settled" as const) : ("active" as const),
       sourceCount: new Set(reports.map((r) => r.source_id)).size,
       reportCount: reports.length,
@@ -312,11 +378,12 @@ export async function v1Story(storyId: number) {
       latest: s.latest ?? developments[0]?.title ?? s.title,
       digest: s.digest,
       digestUpdatedAt: s.digest_updated_at?.toISOString() ?? null,
-      links: { aihot: storyUrl(s.public_id) },
+      links: { aihot: storyUrl(s.public_id, domain) },
       reports: reports.slice(0, 50).map((r) => ({
         id: r.id,
         title: r.title,
         summary: r.summary,
+        domains: r.domains,
         source: { name: r.source_name, firstParty: r.first_party },
         publishedAt: r.at.toISOString(),
         links: { aihot: itemUrl(r.id), original: r.url },

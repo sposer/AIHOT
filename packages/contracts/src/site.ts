@@ -72,6 +72,8 @@ export interface FeedItemSummary extends Pick<ItemSummary, "id" | "title" | "sum
 
 export interface GroupInfo {
   factId: string;
+  /** Union of current public report domains; fact/story identity remains global. */
+  domains: DomainKey[];
   story: StoryRef | null;
   /** Other public sources of the fact the card represents (same set as the expandable reports). */
   additionalSourceCount: number;
@@ -92,6 +94,7 @@ export interface TimelineCard {
 
 export interface HotStripEntry {
   rank: number;
+  domains: DomainKey[];
   title: string;
   heat: number;
   trend: "up" | "down" | "flat" | "new" | "unknown";
@@ -131,6 +134,24 @@ export interface PoolResponse {
   generatedAt: string;
 }
 
+export interface TopicSummary {
+  slug: string;
+  name: string;
+  group: "company" | "field" | "genre";
+  definition: string;
+  total: number;
+  recent: number;
+  indexable: boolean;
+  latestAt: string | null;
+}
+
+export interface TopicPage {
+  topic: TopicSummary & { related: Array<{ slug: string; name: string }> };
+  items: FeedItemSummary[];
+  page: number;
+  pageCount: number;
+}
+
 export interface OutlineEntry {
   id: string;
   text: string;
@@ -152,6 +173,7 @@ export interface ItemDetail extends ItemSummary {
 
 export interface GroupReport {
   id: string;
+  domains: DomainKey[];
   title: string;
   summary: string | null;
   source: SourceRef;
@@ -169,6 +191,7 @@ export interface GroupReportsResponse {
 
 export interface Development {
   factId: string;
+  domains: DomainKey[];
   title: string;
   occurredAt: string | null;
   representative: ItemSummary;
@@ -207,6 +230,7 @@ export interface HotParticipant {
 
 export interface HotEntryView {
   rank: number;
+  domains: DomainKey[];
   story: StoryRef;
   heat: number;
   trend: "up" | "down" | "flat" | "new" | "unknown";
@@ -246,6 +270,7 @@ export interface HeatPoint {
 
 export interface StoryReportView {
   id: string;
+  domains: DomainKey[];
   title: string;
   summary: string | null;
   source: SourceRef;
@@ -257,6 +282,7 @@ export interface StoryReportView {
 
 export interface StoryFactView {
   factId: string;
+  domains: DomainKey[];
   title: string;
   occurredAt: string | null;
   firstReportAt: string;
@@ -266,6 +292,7 @@ export interface StoryFactView {
 
 export interface StoryDetail {
   publicId: string;
+  domains: DomainKey[];
   title: string;
   status: "active" | "watching" | "settled";
   reportCount: number;

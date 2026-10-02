@@ -14,13 +14,25 @@ export function parseLooseDate(value: string | null | undefined, utcOffset = "+0
   if (!value) return null;
   const v = value.trim();
   if (!v) return null;
+  // Plain numeric dates use the source offset; native formats and loose changelog text stay supported.
+  const m = /(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?:(?:[Tt]|\s*)(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?/.exec(v);
   const direct = Date.parse(v);
-  if (Number.isFinite(direct) && /\d{4}/.test(v)) return new Date(direct);
-  // 2026-09-26 / 2026/09/26 / 2026年9月26日 (+ optional time), interpreted in the given offset.
-  const m = /(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?:\s*(\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(v);
+  if (m && Number.isFinite(direct)) {
+    const rest = `${v.slice(0, m.index)} ${v.slice(m.index + m[0].length)}`.trim();
+    if (rest) {
+      // decision: probe native timezone overrides before the decorations; not treating a successful parse as zoned because release titles also parse.
+      // revisit when a Node upgrade changes native handling of multiple timezone offsets.
+      const wall = m[0].replace(/[Tt]/, " ");
+      const zero = Date.parse(`${wall} GMT+0000 ${rest}`);
+      const hour = Date.parse(`${wall} GMT+0100 ${rest}`);
+      if (Number.isFinite(zero) && zero === hour) return new Date(direct);
+      const local = Date.parse(`${v} ${utcOffset}`);
+      if (Number.isFinite(local)) return new Date(local);
+    }
+  }
   if (m) {
-    const [, y, mo, d, h = "00", mi = "00", s = "00"] = m;
-    const iso = `${y}-${mo!.padStart(2, "0")}-${d!.padStart(2, "0")}T${h.padStart(2, "0")}:${mi}:${s}${utcOffset}`;
+    const [, y, mo, d, h = "00", mi = "00", s = "00", fraction] = m;
+    const iso = `${y}-${mo!.padStart(2, "0")}-${d!.padStart(2, "0")}T${h.padStart(2, "0")}:${mi}:${s}${fraction ? `.${fraction}` : ""}${utcOffset}`;
     const t = Date.parse(iso);
     return Number.isFinite(t) ? new Date(t) : null;
   }
@@ -219,7 +231,9 @@ function fromDocusaurusChangelog(html: string, base: string, source: SourceRow):
       url,
       identityKey: `url:${url}`,
       title,
-      publishedAt: parseLooseDate(title) ?? sectionDate ?? parseLooseDate(stripTags(bodyHtml).slice(0, 80)),
+      publishedAt: parseLooseDate(title, source.config.publishedAtUtcOffset)
+        ?? sectionDate
+        ?? parseLooseDate(stripTags(bodyHtml).slice(0, 80), source.config.publishedAtUtcOffset),
       bodyHtml,
       bodyText: stripTags(bodyHtml),
       bodyStatus: "ok",
@@ -363,7 +377,9 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
     const authoritative = d.publishedAtAuthoritative === true && !!(d.publishedAtSelector || d.publishedAtRegex);
     if (!publishedAt && $ && !dateInJina && !authoritative) {
       const meta = $('meta[property="article:published_time"], meta[name="pubdate"], meta[itemprop="datePublished"]').attr("content");
-      publishedAt = parseLooseDate(meta) ?? parseLooseDate(jsonLdPublished($, html!)) ?? parseLooseDate($("time[datetime]").first().attr("datetime"));
+      publishedAt = parseLooseDate(meta, d.publishedAtUtcOffset)
+        ?? parseLooseDate(jsonLdPublished($, html!), d.publishedAtUtcOffset)
+        ?? parseLooseDate($("time[datetime]").first().attr("datetime"), d.publishedAtUtcOffset);
     }
   }
 

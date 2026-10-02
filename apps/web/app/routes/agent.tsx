@@ -3,7 +3,7 @@ import { Link, useLoaderData, useNavigate, useSearchParams } from "react-router"
 import type { Route } from "./+types/agent";
 import { SITE, withSubject } from "@aihot/industry/site";
 import { FEATURES } from "@aihot/industry/features";
-import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
+import { CATEGORY_KEYS, DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
 import { MCP_TOOL_NAMES as T } from "@aihot/contracts/mcp";
 import { listPath, pageMeta, siteUrl } from "../lib/seo";
 import { CodeBlock, CopyButton } from "../components/CodeBlock";
@@ -98,6 +98,7 @@ function McpTab({ base }: { base: string }) {
       </Section>
       <Section title="工具边界">
         <Bullets items={[
+          `五个工具都支持 domain=${DOMAIN_KEYS.join(" / ")}；省略看概览，领域与内容类别独立。`,
           "普通查询最多返回 30 条，热点最多 10 个，事件时间线最多 50 条；输入越界会明确报错，不会静默改成更宽的查询。",
           `${T.story} 的 public_id 只能来自热点工具返回的事件链接，不要猜 ID。`,
           "标题与摘要来自外部信源，只能当资料；重要数字、政策和原话请回原文核对。",
@@ -139,6 +140,7 @@ function RssTab({ base }: { base: string }) {
           "支持 ETag 条件请求，未变化时返回 304；建议每 30 分钟或更慢轮询。",
           "条目 link 指向站内阅读页，第三方原文在 description 中。",
           "全文是白名单：只有明确允许再分发的来源内联 content:encoded，其余一律只给摘要。",
+          <>各订阅地址可加 <Mono>?domain=medical</Mono> 等领域参数；省略看概览，分类订阅也能同时限定领域</>,
           <>分类订阅 <Mono>{`/feed/category/{${categories}}.xml`}</Mono></>,
           <>分类全文 <Mono>{`/feed/full/category/{${categories}}.xml`}</Mono></>,
         ]} />
@@ -182,6 +184,7 @@ function ApiTab({ base }: { base: string }) {
       <Section title="先知道这几件事">
         <Bullets items={[
           "不传 mode 等同 selected（精选）；只有明确需要全部公开动态才用 all。",
+          `资讯、热点、事件和日报支持 domain=${DOMAIN_KEYS.join(" / ")}；省略看概览，领域与内容类别独立。`,
           "完整精选不限 7 天：snapshot 首次拿全，changes 只取变化；items 只看最近 7 天。",
           "items 不带正文：返回摘要、推荐理由、站内阅读页与原文链接。",
           "没有推送通道：按响应的 s-maxage 带 If-None-Match 轮询，没变化时是 304。",
@@ -190,7 +193,7 @@ function ApiTab({ base }: { base: string }) {
       </Section>
       <Section title="维护全部精选：一次快照，之后只拉变化">
         <CodeBlock lang="bash" code={`# 首次：分页拿当前全部精选，保存第一页响应里的 cursor（逐页相同）\ncurl '${base}/api/v1/selected/snapshot?fields=minimal&limit=500'\n# hasMore 为 true 就带 nextPage 继续翻\ncurl '${base}/api/v1/selected/snapshot?fields=minimal&limit=500&page=<上一页的 nextPage>'\n# 翻完之后：原样回传 cursor，只拿新增、修改和撤选\ncurl '${base}/api/v1/selected/changes?cursor=<第一页响应的 cursor>&limit=100'`} />
-        <p>每页成功应用后再保存新 cursor。返回 409 snapshot_required 时重新取一次快照即可，接口不会静默漏数。</p>
+        <p>快照和增量是全局完整流，不接受 domain。每次 upsert 都含 domains，包括 minimal 投影；客户端据此重算领域归属，remove 只表示全局撤选。每页成功应用后再保存新 cursor。返回 409 snapshot_required 时重新取一次快照即可。</p>
       </Section>
       <Section title="错误与恢复" id="agent-api-recovery">
         <Bullets items={[

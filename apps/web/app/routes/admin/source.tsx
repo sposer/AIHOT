@@ -1,4 +1,5 @@
 import { SITE } from "@aihot/industry/site";
+import { DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/source";
@@ -14,6 +15,7 @@ interface Source {
   kind: string;
   config: Record<string, unknown>;
   tags: string[];
+  domains: DomainKey[];
   first_party: boolean;
   owner_entity_id: string | null;
   tier: string;
@@ -86,7 +88,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: `${loaderData?.source.name ?? "信源"} · ${SITE.name} 后台` }];
 
-type Draft = Pick<Source, "name" | "interval_minutes" | "tier" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
+type Draft = Pick<Source, "name" | "interval_minutes" | "tier" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext" | "domains"> & { tags: string; config: string };
 
 function draftOf(s: Source): Draft {
   return {
@@ -99,6 +101,7 @@ function draftOf(s: Source): Draft {
     owner_entity_id: s.owner_entity_id,
     site_fulltext: s.site_fulltext,
     syndicate_fulltext: s.syndicate_fulltext,
+    domains: s.domains,
     tags: s.tags.join(", "),
     config: JSON.stringify(s.config, null, 2),
   };
@@ -246,6 +249,28 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
               <Field label="标签（逗号分隔）">
                 <Input value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} />
               </Field>
+              <fieldset className="sm:col-span-2">
+                <legend className="text-[12.5px] font-medium text-ink-2">信源覆盖领域</legend>
+                <p className="mt-1 text-[12px] text-ink-4">只表示信源长期覆盖范围；文章领域仍由模型按单篇内容判断</p>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-ink-2">
+                  {DOMAIN_KEYS.map((domain) => (
+                    <label key={domain} className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[var(--accent)]"
+                        checked={draft.domains.includes(domain)}
+                        onChange={(e) => {
+                          const next = new Set(draft.domains);
+                          if (e.target.checked) next.add(domain);
+                          else next.delete(domain);
+                          setDraft({ ...draft, domains: DOMAIN_KEYS.filter((key) => next.has(key)) });
+                        }}
+                      />
+                      {DOMAIN_LABELS[domain]}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               <div className="flex flex-col justify-end gap-2 text-[13px] text-ink-2">
                 {([
                   ["first_party", "一手信源（官方账号或官网）"],

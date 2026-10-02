@@ -1,7 +1,7 @@
 import { SITE } from "@aihot/industry/site";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { CATEGORY_KEYS, CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
+import { CATEGORY_KEYS, CATEGORY_LABELS, DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
 import type { Route } from "./+types/content-item";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
@@ -45,6 +45,15 @@ function Step({ title, meta, children, tone = "accent", last }: { title: ReactNo
   );
 }
 
+function DomainBadges({ domains, empty = "无领域" }: { domains: unknown; empty?: string }) {
+  const values = DOMAIN_KEYS.filter((domain) => Array.isArray(domains) && domains.includes(domain));
+  return values.length ? (
+    <span className="inline-flex flex-wrap gap-1">{values.map((domain) => <Badge key={domain} tone="info">{DOMAIN_LABELS[domain]}</Badge>)}</span>
+  ) : (
+    <span className="text-ink-4">{empty}</span>
+  );
+}
+
 type Dialog = null | "visibility" | "seo" | "override" | "analyze" | "extract" | "group" | "detach" | "merge";
 
 export default function ContentItem({ loaderData }: Route.ComponentProps) {
@@ -54,7 +63,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
   const { run, pending } = useAdminAction();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [visibility, setVisibility] = useState<string>(p?.visibility ?? "public");
-  const [fields, setFields] = useState({ title: "", summary: "", reason: "", category: "", tags: "", selected: "", silent: "" });
+  const [fields, setFields] = useState({ title: "", summary: "", reason: "", category: "", tags: "", selected: "", silent: "", domains: null as DomainKey[] | null });
   const [mergeInto, setMergeInto] = useState("");
   const version = c.override?.version ?? 0;
   const base = `/api/admin/content/${encodeURIComponent(a.id)}`;
@@ -71,6 +80,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
       tags: Array.isArray(f.tags) ? (f.tags as string[]).join(", ") : "",
       selected: f.selected === undefined ? "" : String(f.selected),
       silent: f.silent === undefined ? "" : String(f.silent),
+      domains: Array.isArray(f.domains) ? DOMAIN_KEYS.filter((domain) => (f.domains as unknown[]).includes(domain)) : null,
     });
     setDialog("override");
   };
@@ -118,6 +128,11 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
             <Step title="信源" meta={`${KIND_LABEL[a.source_kind] ?? a.source_kind} · ${String(a.tier).replace("_", ".")} · ${MODE_LABEL[a.participation_mode] ?? a.participation_mode}`}>
               <Link className="text-ink hover:text-accent" to={`/admin/sources/${encodeURIComponent(a.source_id)}`}>{a.source_name}</Link>
               <span className="text-ink-4"> · 站内全文 {a.site_fulltext ? "允许" : "不允许"} · 对外全文 {a.syndicate_fulltext ? "允许" : "不允许"}</span>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <span className="text-[12px] text-ink-4">信源覆盖</span>
+                <DomainBadges domains={a.source_domains} empty="未设置" />
+              </div>
+              <div className="mt-1 text-[12px] text-ink-4">信源覆盖范围不代替逐篇文章的模型领域判断</div>
             </Step>
             <Step title="发现" meta={`${c.discoveries.length} 次`}>
               <ul className="space-y-1">
@@ -165,6 +180,10 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                       </div>
                       {an.title_zh && <div className="mt-2 font-medium text-ink">{an.title_zh}</div>}
                       {an.reason_zh && <div className="mt-1 text-[12.5px] leading-relaxed text-ink-3">{an.reason_zh}</div>}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[12px] text-ink-4">模型领域</span>
+                        <DomainBadges domains={an.domains} />
+                      </div>
                       {(an.receipts as Row[]).length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5 text-[11.5px]">
                           {(an.receipts as Row[]).map((r) => (
@@ -188,6 +207,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                     ["范围", VISIBILITY_LABEL[p.visibility] ?? p.visibility],
                     ["精选", p.selected ? `是 · 可见于 ${p.visible_after ? bj(p.visible_after, true) : "立即"}` : "否"],
                     ["栏目", p.category ? CATEGORY_LABELS[p.category as keyof typeof CATEGORY_LABELS] ?? p.category : null],
+                    ["文章领域", <DomainBadges domains={p.domains} />],
                     ["标签", (p.tags as string[] | null)?.join("、")],
                     ["摘要", p.summary],
                     ["推荐理由", p.reason],
@@ -343,7 +363,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
       <ReasonDialog
         open={dialog === "override"}
         title="人工修正"
-        description="人工值优先于模型输出，之后的重处理不会覆盖；留空表示不修正该字段（清除已有修正请选“清除”）。"
+        description="人工值优先于模型输出，之后的重处理不会覆盖；要移除领域修正，改为“按模型判断”即可恢复模型结果。手动领域可以不选任何领域，并保存为显式空集合。"
         confirmLabel="保存修正"
         busy={pending === "override"}
         onClose={() => setDialog(null)}
@@ -362,6 +382,8 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
             if (fields[k] === "true" || fields[k] === "false") next[k] = fields[k] === "true";
             else if (c.override?.fields[k] !== undefined) clear.push(k);
           }
+          if (fields.domains !== null) next.domains = DOMAIN_KEYS.filter((domain) => fields.domains!.includes(domain));
+          else if (Object.prototype.hasOwnProperty.call(c.override?.fields ?? {}, "domains")) clear.push("domains");
           return (await run("POST", `${base}/override`, { fields: next, clear, reason, version }, { label: "override", success: "修正已保存并重新发布" })) !== null;
         }}
       >
@@ -376,6 +398,39 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
             </Select>
           </Field>
           <Field label="标签（逗号分隔）"><Input value={fields.tags} onChange={(e) => setFields({ ...fields, tags: e.target.value })} /></Field>
+          <Field label="领域归属" hint="按模型判断不保存覆盖；手动指定可以留空为无领域">
+            <Select
+              value={fields.domains === null ? "model" : "manual"}
+              onChange={(e) => setFields({ ...fields, domains: e.target.value === "manual" ? fields.domains ?? [] : null })}
+            >
+              <option value="model">按模型判断</option>
+              <option value="manual">手动指定</option>
+            </Select>
+          </Field>
+          {fields.domains !== null && (
+            <fieldset className="sm:col-span-2">
+              <legend className="text-[12.5px] font-medium text-ink-2">手动指定的文章领域</legend>
+              <p className="mt-1 text-[12px] text-ink-4">不选任何项会显式覆盖为无领域</p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-ink-2">
+                {DOMAIN_KEYS.map((domain) => (
+                  <label key={domain} className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-[var(--accent)]"
+                      checked={fields.domains?.includes(domain) ?? false}
+                      onChange={(e) => {
+                        const next = new Set(fields.domains ?? []);
+                        if (e.target.checked) next.add(domain);
+                        else next.delete(domain);
+                        setFields({ ...fields, domains: DOMAIN_KEYS.filter((key) => next.has(key)) });
+                      }}
+                    />
+                    {DOMAIN_LABELS[domain]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <Field label="精选">
             <Select value={fields.selected} onChange={(e) => setFields({ ...fields, selected: e.target.value })}>
               <option value="">按模型</option>

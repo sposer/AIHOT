@@ -1,6 +1,6 @@
 // Reading-group expansions: the reports behind "另有 N 家信源报道" and the developments behind
 // "展开 N 条进展". Members must pass the same visibility, pool eligibility and parent-page filters.
-import type { CategoryKey, ChannelKey, DomainKey } from "@aihot/contracts/taxonomy";
+import { normalizeDomains, type CategoryKey, type ChannelKey, type DomainKey } from "@aihot/contracts/taxonomy";
 import type { DevelopmentsResponse, GroupReportsResponse } from "@aihot/contracts/site";
 import { sql } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
@@ -31,10 +31,10 @@ export async function loadGroupReports(q: GroupReportsQuery, now = new Date()): 
   if (!fact) return { kind: "not_found" };
   const filters = sql`${domainCondition(q.domain)} ${channelCondition(q.channel)} ${categoryCondition(q.category)} ${tagCondition(q.tag)} ${topicCondition(q.topicTags)}`;
   const members = await sql<{
-    id: string; title: string; summary: string | null; timeline_at: Date; url: string; selected: boolean;
+    id: string; title: string; summary: string | null; domains: DomainKey[]; timeline_at: Date; url: string; selected: boolean;
     source_id: string; source_name: string; source_kind: string; first_party: boolean; icon_url: string | null;
   }[]>`
-    SELECT p.article_id AS id, p.title, p.summary, p.timeline_at, p.url, p.selected,
+    SELECT p.article_id AS id, p.title, p.summary, p.domains, p.timeline_at, p.url, p.selected,
            s.id AS source_id, s.name AS source_name, s.kind AS source_kind, p.first_party, s.icon_url
     FROM publications p JOIN sources s ON s.id = p.source_id
     WHERE p.article_id IN (SELECT article_id FROM fact_articles WHERE fact_id = ${fact.id}) AND p.visibility = 'public' AND p.eligible
@@ -63,6 +63,7 @@ export async function loadGroupReports(q: GroupReportsQuery, now = new Date()): 
       revision,
       reports: page.map((m) => ({
         id: m.id,
+        domains: m.domains,
         title: m.title,
         summary: m.summary,
         source: { id: m.source_id, name: m.source_name, kind: m.source_kind as never, firstParty: m.first_party, iconUrl: proxiedImage(m.icon_url, "avatar") },
@@ -114,15 +115,19 @@ export async function loadDevelopments(q: DevelopmentsQuery, now = new Date()): 
   const byFact = new Map<number, Member[]>();
   for (const r of selected) if (r.fact_id !== null) byFact.set(r.fact_id, [...(byFact.get(r.fact_id) ?? []), r]);
   if (byFact.size === 0) return { kind: "not_found" };
-  const facts = await sql<{ id: number; public_id: string; title: string; occurred_at: Date | null }[]>`
-    SELECT id, public_id, title, occurred_at FROM facts WHERE id IN ${sql([...byFact.keys()])}`;
+  const facts = await sql<{ id: number; public_id: string; title: string; domains: DomainKey[]; occurred_at: Date | null }[]>`
+    SELECT f.id, f.public_id, f.title, f.occurred_at,
+      ARRAY(SELECT DISTINCT unnest(p.domains) FROM fact_articles fa JOIN publications p ON p.article_id = fa.article_id
+            WHERE fa.fact_id = f.id AND p.visibility = 'public' AND p.eligible
+              AND (NOT p.selected OR p.visible_after <= ${now})) AS domains
+    FROM facts f WHERE f.id IN ${sql([...byFact.keys()])}`;
   const list = facts
     .map((f) => {
       const rows = byFact.get(f.id)!;
       const rep = pickRepresentative(rows);
       return {
         first: Math.min(...rows.map((r) => (r.sort_at ?? r.timeline_at).getTime())),
-        development: { factId: f.public_id, title: f.title, occurredAt: f.occurred_at?.toISOString() ?? null, representativeId: rep.id, reportCount: counts.get(f.id) ?? rows.length },
+        development: { factId: f.public_id, title: f.title, domains: normalizeDomains(f.domains), occurredAt: f.occurred_at?.toISOString() ?? null, representativeId: rep.id, reportCount: counts.get(f.id) ?? rows.length },
       };
     })
     .sort((a, b) => b.first - a.first || a.development.factId.localeCompare(b.development.factId))

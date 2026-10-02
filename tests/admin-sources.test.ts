@@ -2,7 +2,7 @@
 import { stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { createSource, updateSource } from "@aihot/backend/admin/sources";
+import { createSource, listSources, updateSource } from "@aihot/backend/admin/sources";
 import { closeDb, sql } from "@aihot/backend/db";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { UnsupportedConfig } from "@aihot/backend/sources/config-keys";
@@ -68,6 +68,12 @@ test("promoting a skipped source queues normal analysis and routes an already qu
   assert.equal((await sql`SELECT 1 FROM pgboss.job WHERE name = 'content.analyze' AND data->>'articleId' = ${articleId}`).length, 1);
   const [coverage] = await sql<{ domains: string[] }[]>`SELECT domains FROM sources WHERE id = ${id}`;
   assert.deepEqual(coverage!.domains, ["medical", "policy"]);
+  for (const domain of ["medical", "policy"] as const) {
+    const list = await listSources({ q: id, domain });
+    assert.deepEqual(list.rows.map((s) => s.id), [id]);
+    assert.deepEqual(list.rows[0]!.domains, coverage!.domains);
+  }
+  assert.equal((await listSources({ q: id, domain: "ai" })).rows.length, 0);
   // The analysis job commits a judgement before the old grouping job is consumed.
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, domains, category, title_zh, summary_zh, score, selected, output)
     VALUES (${articleId}, 1, 'rule', 'pass', ARRAY['medical'], 'paper', ${`Clinical ${T}`}, 'Clinical study', 80, true, ${sql.json({ fact: { title: `Clinical ${T}`, subject: `study-${T}` } })})`;

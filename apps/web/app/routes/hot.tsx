@@ -1,8 +1,11 @@
-import { SITE, withSubject } from "@aihot/industry/site";
-import { Link, useLoaderData } from "react-router";
+import { withSubject } from "@aihot/industry/site";
+import { data as routeData, Link, useLoaderData } from "react-router";
+import type { Route } from "./+types/hot";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
-import { loadOr404 } from "../lib/api.server";
-import { pageMeta } from "../lib/seo";
+import { DOMAIN_KEYS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
+import { loadOr404, queryString } from "../lib/api.server";
+import { DomainTabs, queryDomainHref } from "../features/feed/Filters";
+import { listPath, pageMeta } from "../lib/seo";
 import { monthDayTime, shortSourceName } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/Page";
@@ -11,15 +14,22 @@ import { Sparkline } from "../features/hot/Sparkline";
 import { Faces } from "../features/hot/Faces";
 import { Delta } from "../features/hot/Delta";
 
-export async function loader({ request }: { request: Request }) {
-  return { hot: await loadOr404<HotResponse>("/api/site/hot", { signal: request.signal }) };
+export async function loader({ request }: Route.LoaderArgs) {
+  const domain = new URL(request.url).searchParams.get("domain");
+  if (domain !== null && !isDomainKey(domain)) throw routeData({ message: "bad_request" }, { status: 400 });
+  const hot = await loadOr404<HotResponse>(`/api/site/hot${queryString({ domain })}`, { signal: request.signal });
+  return { hot, domain };
 }
 
-export function meta() {
+export function meta({ loaderData }: Route.MetaArgs) {
+  const domain = isDomainKey(loaderData?.domain) ? loaderData.domain : null;
+  const subjects = DOMAIN_KEYS.map((key) => DOMAIN_LABELS[key]).join("、");
   return pageMeta({
     title: withSubject("热点榜"),
-    description: "过去 48 小时 AI 圈讨论最多的 10 个事件：热度指数、趋势与组成热度的公开来源。",
-    path: "/hot",
+    description: domain
+      ? `过去 48 小时，${DOMAIN_LABELS[domain]}领域讨论最多的事件：热度指数、趋势与组成热度的公开来源。`
+      : `过去 48 小时，${subjects}等领域讨论最多的事件：热度指数、趋势与组成热度的公开来源。`,
+    path: listPath("/hot", { domain }),
     image: "/og/pages/hot.png",
   });
 }
@@ -65,9 +75,9 @@ function Badges({ e }: { e: HotEntryView }) {
 }
 
 /** The whole card opens the event; the title carries the link and stretches over the card. */
-function StoryLink({ e, className }: { e: HotEntryView; className: string }) {
+function StoryLink({ e, domain, className }: { e: HotEntryView; domain: string | null; className: string }) {
   return (
-    <Link to={`/story/${e.story.publicId}`} prefetch="intent" className={`transition-colors after:absolute after:inset-0 after:content-[''] ${className}`}>
+    <Link to={listPath(`/story/${e.story.publicId}`, { domain })} prefetch="intent" className={`transition-colors after:absolute after:inset-0 after:content-[''] ${className}`}>
       {e.story.title}
     </Link>
   );
@@ -100,7 +110,7 @@ function HeatPanel({ e }: { e: HotEntryView }) {
 }
 
 /** No. 1: the event people are talking about most, with its picture, digest, latest turn and day of heat. */
-function Lead({ e }: { e: HotEntryView }) {
+function Lead({ e, domain }: { e: HotEntryView; domain: string | null }) {
   const panel = !e.cover && e.spark.filter((v) => v !== null).length >= 3;
   return (
     <article className="card card-hover group relative flex flex-col overflow-hidden p-5 sm:p-6">
@@ -112,7 +122,7 @@ function Lead({ e }: { e: HotEntryView }) {
       <div className={`mt-4 grid gap-5 ${e.cover || panel ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)] xl:gap-7" : ""}`}>
         <div className="min-w-0">
           <h2 className="text-[21px] font-bold leading-[1.4] tracking-[-0.01em] text-ink sm:text-[23px] lg:text-[25px] lg:leading-[1.38]">
-            <StoryLink e={e} className="group-hover:text-accent" />
+            <StoryLink e={e} domain={domain} className="group-hover:text-accent" />
           </h2>
           {e.summary && <p className="mt-3 line-clamp-3 text-[14px] leading-[1.75] text-ink-3">{e.summary}</p>}
         </div>
@@ -152,7 +162,7 @@ function Lead({ e }: { e: HotEntryView }) {
 }
 
 /** No. 2 and 3: the same card, smaller, without the picture. */
-function Runner({ e }: { e: HotEntryView }) {
+function Runner({ e, domain }: { e: HotEntryView; domain: string | null }) {
   return (
     <article className="card card-hover group relative flex flex-col px-5 py-4">
       <div className="flex items-center gap-2.5">
@@ -161,7 +171,7 @@ function Runner({ e }: { e: HotEntryView }) {
         <Delta trend={e.trend} pct={e.trendPct} className="ml-auto" />
       </div>
       <h2 className="mt-2.5 line-clamp-2 text-[16px] font-[650] leading-[1.5] text-ink">
-        <StoryLink e={e} className="group-hover:text-accent" />
+        <StoryLink e={e} domain={domain} className="group-hover:text-accent" />
       </h2>
       {e.summary && <p className="mt-1.5 line-clamp-2 text-[13px] leading-[1.7] text-ink-3 lg:line-clamp-1">{e.summary}</p>}
       <div className="mt-auto flex items-end justify-between gap-4 pt-3">
@@ -182,7 +192,7 @@ function Runner({ e }: { e: HotEntryView }) {
 }
 
 /** No. 4–10: a row each, with a line of the digest, faces, the day of heat and the index. */
-function Row({ e }: { e: HotEntryView }) {
+function Row({ e, domain }: { e: HotEntryView; domain: string | null }) {
   return (
     <li className="group relative grid grid-cols-[30px_minmax(0,1fr)] items-start gap-x-3 px-4 py-3 transition-colors hover:bg-bg-sunk/70 sm:px-5 lg:grid-cols-[44px_minmax(0,1fr)_auto_104px_76px] lg:items-center lg:gap-x-6 lg:px-6 lg:py-3.5 dark:hover:bg-bg-muted/40">
       <span className={`mono text-[16px] font-semibold leading-[24px] lg:text-[17px] ${rankColor(e.rank)}`} aria-label={`热度排名第 ${e.rank} 位`}>
@@ -190,7 +200,7 @@ function Row({ e }: { e: HotEntryView }) {
       </span>
       <div className="min-w-0">
         <h3 className="text-[15px] font-[650] leading-[1.55] text-ink">
-          <StoryLink e={e} className="group-hover:text-accent" />
+          <StoryLink e={e} domain={domain} className="group-hover:text-accent" />
           {e.badges.length > 0 && (
             <span className="ml-2 inline-flex translate-y-[-2px] gap-1 align-middle">
               <Badges e={e} />
@@ -222,7 +232,8 @@ function Row({ e }: { e: HotEntryView }) {
 }
 
 export default function HotPage() {
-  const { hot } = useLoaderData<typeof loader>();
+  const { hot, domain } = useLoaderData<typeof loader>();
+  const scope = isDomainKey(domain) ? domain : "all";
   const [lead, ...rest] = hot.entries;
   const runners = rest.slice(0, 2);
   const others = rest.slice(2);
@@ -238,7 +249,9 @@ export default function HotPage() {
             实时热度
           </div>
           <h1 className="mt-1.5 text-[24px] font-bold leading-[1.3] tracking-[-0.01em] text-ink lg:text-[26px]">{withSubject("热点榜")}</h1>
-          <p className="mt-1.5 text-[13.5px] text-ink-3">过去 {hot.windowHours} 小时，AI 圈讨论最多的 {hot.entries.length || 10} 件事</p>
+          <p className="mt-1.5 text-[13.5px] text-ink-3">
+            过去 {hot.windowHours} 小时，{isDomainKey(domain) ? `${DOMAIN_LABELS[domain]}领域` : `${DOMAIN_KEYS.map((key) => DOMAIN_LABELS[key]).join("、")}等领域`}讨论最多的 {hot.entries.length || 10} 件事
+          </p>
         </div>
         {hot.computedAt && (
           <p className="text-[12px] text-ink-4">
@@ -246,6 +259,14 @@ export default function HotPage() {
           </p>
         )}
       </header>
+
+      <DomainTabs
+        scope={scope}
+        layoutId="hot-domains"
+        label="热点领域"
+        getHref={(target, params) => queryDomainHref("/hot", params, target)}
+        className="mb-5"
+      />
 
       {!lead ? (
         <div className="card rounded-sheet">
@@ -255,11 +276,11 @@ export default function HotPage() {
         <>
           <section aria-label="热度前三" className="grid gap-3 lg:grid-cols-12 lg:gap-4">
             <div className="grid lg:col-span-7 lg:row-span-2 xl:col-span-8">
-              <Lead e={lead} />
+              <Lead e={lead} domain={domain} />
             </div>
             {runners.map((e) => (
               <div key={e.story.publicId} className="grid lg:col-span-5 xl:col-span-4">
-                <Runner e={e} />
+                <Runner e={e} domain={domain} />
               </div>
             ))}
           </section>
@@ -274,7 +295,7 @@ export default function HotPage() {
               </div>
               <ol className="card divide-y divide-line-soft overflow-hidden">
                 {others.map((e) => (
-                  <Row key={e.story.publicId} e={e} />
+                  <Row key={e.story.publicId} e={e} domain={domain} />
                 ))}
               </ol>
             </section>

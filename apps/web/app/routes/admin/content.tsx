@@ -1,4 +1,5 @@
 import { SITE } from "@aihot/industry/site";
+import { DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
 import { Form, Link, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/content";
 import { adminGet } from "../../lib/admin.server";
@@ -15,6 +16,7 @@ interface Row {
   visibility: string | null;
   selected: boolean | null;
   score: number | null;
+  domains: DomainKey[] | null;
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -55,6 +57,18 @@ export default function Content({ loaderData }: Route.ComponentProps) {
                 ),
               },
               { key: "src", label: "信源", render: (r) => <span className="whitespace-nowrap">{r.source}</span> },
+              {
+                key: "domains",
+                label: "文章领域",
+                render: (r) => {
+                  const domains = DOMAIN_KEYS.filter((domain) => r.domains?.includes(domain));
+                  return domains.length ? (
+                    <span className="flex flex-wrap gap-1">{domains.map((domain) => <Badge key={domain}>{DOMAIN_LABELS[domain]}</Badge>)}</span>
+                  ) : (
+                    <span className="text-ink-4">无领域</span>
+                  );
+                },
+              },
               {
                 key: "st",
                 label: "状态",

@@ -1,10 +1,12 @@
-import { SITE, withSubject } from "@aihot/industry/site";
-import { Link, redirect, useLoaderData } from "react-router";
+import { SITE } from "@aihot/industry/site";
+import { data as routeData, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/topic";
-import type { FeedItemSummary } from "@aihot/contracts/site";
-import { loadOr404 } from "../lib/api.server";
-import { breadcrumbLd, pageMeta, titled } from "../lib/seo";
+import type { TopicPage as TopicPageData } from "@aihot/contracts/site";
+import { isDomainKey } from "@aihot/contracts/taxonomy";
+import { loadOr404, queryString } from "../lib/api.server";
+import { breadcrumbLd, listPath, pageMeta, titled } from "../lib/seo";
 import { DayList, Pagination } from "../features/feed/DayList";
+import { DomainTabs, queryDomainHref } from "../features/feed/Filters";
 import { EmptyState, MoreLink } from "../components/ui/Page";
 
 /** Selected items of a topic: shared caches keep the page as long as its api answer (one minute). */
@@ -12,40 +14,38 @@ export function headers() {
   return { "Cache-Control": "public, max-age=0, s-maxage=60" };
 }
 
-interface TopicPageData {
-  topic: { slug: string; name: string; group: string; definition: string; total: number; indexable: boolean; related: Array<{ slug: string; name: string }> };
-  items: FeedItemSummary[];
-  page: number;
-  pageCount: number;
-}
-
 export async function loader({ params, request }: Route.LoaderArgs) {
   const page = params.page ? Number(params.page) : 1;
+  const domain = new URL(request.url).searchParams.get("domain");
+  if (domain !== null && !isDomainKey(domain)) throw routeData({ message: "bad_request" }, { status: 400 });
   if (params.page !== undefined && (!/^\d+$/.test(params.page) || page < 1)) throw new Response("Not found", { status: 404 });
-  // Page 1 lives at the topic's own address (308).
-  if (params.page === "1") throw redirect(`/topics/${params.slug}`, 308);
-  const data = await loadOr404<TopicPageData>(`/api/site/topics/${encodeURIComponent(params.slug)}?page=${page}`, { signal: request.signal });
-  return { data };
+  // Page 1 lives at the topic's own address (308), retaining the selected domain.
+  if (params.page === "1") throw redirect(`/topics/${params.slug}${queryString({ domain })}`, 308);
+  const data = await loadOr404<TopicPageData>(`/api/site/topics/${encodeURIComponent(params.slug)}${queryString({ page, domain })}`, { signal: request.signal });
+  return { data, domain };
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
   if (!loaderData) return [{ title: titled("主题不存在") }, { name: "robots", content: "noindex" }];
   const { topic, page } = loaderData.data;
-  const path = page > 1 ? `/topics/${topic.slug}/page/${page}` : `/topics/${topic.slug}`;
+  const domain = isDomainKey(loaderData.domain) ? loaderData.domain : null;
+  const path = listPath(page > 1 ? `/topics/${topic.slug}/page/${page}` : `/topics/${topic.slug}`, { domain });
   return pageMeta({
     title: page > 1 ? `${topic.name} · 第 ${page} 页` : topic.name,
     description: topic.definition,
     path,
     image: `/og/topics/${topic.slug}.png`,
     noindex: !topic.indexable,
-    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "主题", path: "/topics" }, { name: topic.name, path: `/topics/${topic.slug}` }]),
+    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "主题", path: listPath("/topics", { domain }) }, { name: topic.name, path: listPath(`/topics/${topic.slug}`, { domain }) }]),
   });
 }
 
 export default function TopicPage() {
-  const { data } = useLoaderData<typeof loader>();
+  const { data, domain } = useLoaderData<typeof loader>();
   const { topic, items, page, pageCount } = data;
-  const href = (p: number) => (p <= 1 ? `/topics/${topic.slug}` : `/topics/${topic.slug}/page/${p}`);
+  const scope = isDomainKey(domain) ? domain : "all";
+  const domainQuery = listPath("", { domain: scope === "all" ? null : scope });
+  const href = (p: number) => `${p <= 1 ? `/topics/${topic.slug}` : `/topics/${topic.slug}/page/${p}`}${domainQuery}`;
   const first = (page - 1) * 20 + 1;
   const last = first + items.length - 1;
   return (
@@ -54,7 +54,7 @@ export default function TopicPage() {
         <div className="flex items-start justify-between gap-4">
           <h1 className="text-[22px] font-bold leading-[1.35] text-ink">{topic.name}</h1>
           <span className="hidden pt-2 lg:block">
-            <MoreLink to="/topics">全部主题</MoreLink>
+            <MoreLink to={`/topics${domainQuery}`}>全部主题</MoreLink>
           </span>
         </div>
         <p className="mt-1 max-w-[640px] text-[13px] leading-relaxed text-ink-3">{topic.definition}</p>
@@ -66,7 +66,7 @@ export default function TopicPage() {
             <span className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
               <span className="text-ink-4">相关主题</span>
               {topic.related.map((r) => (
-                <Link key={r.slug} to={`/topics/${r.slug}`} className="chip">
+                <Link key={r.slug} to={`/topics/${r.slug}${domainQuery}`} className="chip">
                   {r.name}
                 </Link>
               ))}
@@ -74,6 +74,13 @@ export default function TopicPage() {
           )}
         </div>
       </header>
+      <DomainTabs
+        scope={scope}
+        layoutId="topic-domains"
+        label="主题领域"
+        getHref={(target, params) => queryDomainHref(`/topics/${topic.slug}`, params, target)}
+        className="mb-5"
+      />
 
       <div className="mb-1 mt-2 flex items-baseline justify-between">
         <h2 className="text-[18px] font-bold text-ink">最新精选</h2>

@@ -1,41 +1,25 @@
 # 给 Agent 的说明
 
-这是一个行业热点网站的框架：采集信源、用模型筛选和写作、归组事件、出日报，并通过网站、RSS、公开 API 和 MCP 对外提供。默认配置是一个 AI 行业的示例站。先读 README，再按任务读 `docs/` 里对应的文档。
+这是一个行业热点网站框架；当前默认站名为 MyHOT，开箱配置覆盖五个领域。先读 [README](README.md)，再按任务读 `docs/` 中的 owner 文档。定制顺序见 [docs/customize.md](docs/customize.md)。
 
-## 最常见的任务：改成另一个行业
+## 行业边界
 
-按 `docs/customize.md` 的顺序做。行业相关的一切都在 `industry/`：站名文案（`site.ts`）、分类标签（`taxonomy.ts`）、主题（`topics.json`）、示范信源（`sources.json`）、提示词（`prompts/`）、门槛（`selection.ts`）、模块开关（`features.ts`）、品牌（`brand/`）、条款页（`pages/`）。通常不需要改 `apps/` 和 `packages/`。
+- 行业配置归 `industry/`：站名文案、领域与分类、主题、信源、提示词、门槛、模块、品牌和条款页。换行业通常不需要改 `apps/` 或 `packages/`。
+- 站名、信源、重要与噪声标准、分类，以及使用规则和隐私内容由使用者决定；不要代替使用者拍板。
+- 保留既有评分结构、共享权重和门槛，不凭感觉改数值；领域筛选质量的校准边界与流程见 [docs/selection.md](docs/selection.md)。
+- 逐篇 `domains[]` 来自结构化分析或人工 override；信源 `domains` 仅表示覆盖范围，不能作为文章领域回退值。`all` 是概览/报告范围，不是文章领域。完整契约见 [docs/architecture.md](docs/architecture.md)。
 
-这些事要问使用者本人，不要替他决定：站名；要盯哪些信源；什么消息重要、什么是噪声；分类怎么分；条款和隐私说明的内容（`industry/pages/` 是模板，上线前需要他本人确认）。
+## 工程边界
 
-改评分标准时保留原有结构（内容类型、五个维度加权、噪声压制、安全边界），替换的是“什么算重要”“什么算噪声”的例子。门槛要用使用者标注的样本重新校准（`docs/selection.md`），不要凭感觉改数字。
+- Web 只通过 HTTP 读取 API；数据库、模型调用和密钥留在后端。所有公开出口共用 `packages/backend/src/publication/` 读取层。
+- 读者请求不触发模型调用；付费请求必须经过回执和预算熔断。未知回执的恢复归 `docs/architecture.md` 中的回执边界。
+- 开发和测试时保持 `COLLECT_ENABLED`、`MODEL_CALLS_ENABLED`、`FEISHU_CONTENT_PUSH_ENABLED`、`FEISHU_INTERNAL_ENABLED`、`INDEXNOW_SUBMIT_ENABLED` 关闭；测试不访问外部服务。
+- 信源默认只公开摘要和原文链接；只有来源明确允许时才启用 `site_fulltext`。公开内容对管理员和访客一致，后台只允许管理员。
+- 数据库只走 [docs/deploy.md](docs/deploy.md#数据库初始化与迁移) 定义的基线和增量迁移边界。使用规则和隐私说明由站点运营者确认。
 
-## 运行与检查
+## 检查与交付
 
-- Node.js 24 直接运行 TypeScript，后端没有构建步骤。npm workspaces：`apps/*`、`packages/*`、`industry`。
-- 本机运行和 Docker 见 `docs/deploy.md`。
-- 改完至少跑：
-  ```bash
-  npm run typecheck
-  DATABASE_URL=postgres://127.0.0.1:5432/<名字>_test npm test   # 空库，名字必须以 _test 或 _ci 结尾，先 node scripts/migrate.ts
-  npm run build -w @aihot/web && node --test apps/web/tests/*.test.ts
-  node scripts/smoke.ts --base http://localhost:3000             # 站点跑起来以后
-  ```
-- `tests/` 里部分测试用的是示例行业的分类、标签和公司，改了 `industry/taxonomy.ts` 后把这些例子换成新行业的对应项。
-
-## 要守住的规则
-
-- 前端（`apps/web`）只通过 HTTP 读 `apps/api`，数据库、模型调用和密钥只在后端。
-- 所有公开出口都从 `packages/backend/src/publication/` 这一个读取层读，新增公开出口也一样。
-- 读者打开页面不触发模型调用；模型只在 worker 的任务里调用。
-- 付费请求都经过回执（`providers/receipts.ts`）和预算熔断，不要绕开。
-- 开发和测试时保持安全阀关闭：`COLLECT_ENABLED`、`MODEL_CALLS_ENABLED`、`FEISHU_*_ENABLED`、`INDEXNOW_SUBMIT_ENABLED`。测试不访问任何外部服务。
-- 信源默认只展示摘要和原文链接（`site_fulltext` 关）；只有来源明确允许时才打开全文。
-- 公开内容匿名，管理员和访客看到的一样；后台只允许管理员。
-- 数据库基线和增量迁移的边界遵循 [部署文档](docs/deploy.md#数据库初始化与迁移)，不要增加第二套初始化路径。
-- 不要提交 `.env`、密钥和 `.data/`。
-- 不要使用 AIHOT 的名字和 Logo。
-
-## 写代码
-
-匹配周围代码的写法、命名和注释密度。选能清楚解决问题的简单方案，只定义正在使用的抽象。验证改动涉及的重要行为，不为简单的样式改动写测试。
+- 使用 Node.js 24.11+ 直接运行 TypeScript，项目依赖由 npm workspaces 管理。
+- 改完必须运行类型检查、完整后端测试、Web 构建及 Web 测试，并在站点运行后执行 smoke。实际命令以根目录及 workspace manifests 为准；操作流程见 README 和 [docs/deploy.md](docs/deploy.md)。
+- 验证受影响的重要行为；测试数据库名须以 `_test` 或 `_ci` 结尾。改行业词表时，同步更新使用示范行业数据的测试样例。
+- 匹配周围代码风格，保持改动最小；不为简单样式改动加测试。不要提交 `.env`、密钥或 `.data/`，不要把 AIHOT 的名字或 Logo 用作站点品牌。

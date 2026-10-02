@@ -573,7 +573,7 @@
       "get": {
         "operationId": "hotTopics",
         "summary": "List current multi-source hot topics",
-        "description": "The current {{siteName}} Top 10, ranked by multi-source coverage and discussion heat. Each item includes a one-based rank; internal and display heat values are not returned. Uses the latest successfully published ranking, normally refreshed every five minutes. Shared caches use a 60s freshness window; poll no faster than s-maxage and use If-None-Match. If an item includes links.story, it is a human-facing HTML URL: extract its final publicId path segment and call /api/v1/stories/{publicId} for timeline JSON. Never request links.story as an API. When absent, do not construct a story id.",
+        "description": "The current {{siteName}} Top 10 in the requested domain, or the overview when domain is omitted. One global heat ranking supplies every view; current public members are filtered by domain before representatives and the Top 10 are chosen. Each item includes a one-based rank and domains derived from its globally public reports; internal and display heat values are not returned. Uses the latest successfully published ranking, normally refreshed every five minutes. Shared caches use a 60s freshness window; poll no faster than s-maxage and use If-None-Match. If an item includes links.story, it is a human-facing HTML URL: extract publicId from its URL pathname and call /api/v1/stories/{publicId}, preserving domain, for timeline JSON. Never request links.story as an API. When absent, do not construct a story id.",
         "responses": {
           "200": {
             "description": "OK",
@@ -723,6 +723,9 @@
           },
           {
             "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Domain"
           }
         ]
       }
@@ -731,8 +734,11 @@
       "get": {
         "operationId": "storyByPublicId",
         "summary": "Get a story (event) with its coverage timeline and AI digest",
-        "description": "One story = one real-world event aggregated from every covering source: a reverse-chronological coverage timeline, an AI digest that is rewritten incrementally as the event evolves (contradictions with earlier reporting are stated explicitly), and links to same-storyline and related stories. Extract ids from the final path segment of a hot-topics links.story HTML URL, or use ids from another story's storyline/related refs; never request links.story as JSON. Merged stories answer with a 308 to the surviving id. Call this endpoint only with an id actually returned by the API; a 404 means the public story layer or that story is unavailable.",
+        "description": "One global story = one real-world event aggregated from its covering sources. Optional domain filters public reports, counts and related stories before their limits, without changing publicId or creating another digest. Omit domain for the overview. domains is derived from the story's globally public reports. The response includes a reverse-chronological coverage timeline, an AI digest rewritten incrementally as the event evolves, and links to same-storyline and related stories. Extract ids from the URL pathname of hot-topics links.story, or use ids from another story's storyline/related refs; preserve domain and never request links.story as JSON. Merged stories answer with a 308 to the surviving id, preserving domain. Call this endpoint only with an id actually returned by the API; a 404 means no public reports exist in the requested scope.",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/Domain"
+          },
           {
             "$ref": "#/components/parameters/ActorUserAgent"
           },
@@ -2831,6 +2837,7 @@
           "rank",
           "id",
           "title",
+          "domains",
           "source",
           "links",
           "sourceCount",
@@ -2844,6 +2851,10 @@
             "minimum": 1,
             "maximum": 10,
             "description": "One-based position in the current {{siteName}} Top 10 response."
+          },
+          "domains": {
+            "$ref": "#/components/schemas/Domains",
+            "description": "Union of domains from the event's currently public reports, independent of the requested view."
           },
           "id": {
             "type": "string"
@@ -2880,7 +2891,7 @@
               "story": {
                 "type": "string",
                 "format": "uri",
-                "description": "Optional human-facing HTML URL. Extract its final publicId path segment and call /api/v1/stories/{publicId} for JSON; never request this URL as an API. Do not construct story ids when absent."
+                "description": "Optional human-facing HTML URL. Extract publicId from its URL pathname and call /api/v1/stories/{publicId}, preserving domain, for JSON; never request this URL as an API. Do not construct story ids when absent."
               }
             }
           },
@@ -2938,11 +2949,15 @@
           "id",
           "title",
           "summary",
+          "domains",
           "source",
           "publishedAt",
           "links"
         ],
         "properties": {
+          "domains": {
+            "$ref": "#/components/schemas/Domains"
+          },
           "id": {
             "type": "string"
           },
@@ -3034,6 +3049,7 @@
         "required": [
           "publicId",
           "title",
+          "domains",
           "status",
           "sourceCount",
           "reportCount",
@@ -3048,6 +3064,10 @@
           "related"
         ],
         "properties": {
+          "domains": {
+            "$ref": "#/components/schemas/Domains",
+            "description": "Union of domains from the story's currently public reports, independent of the requested view."
+          },
           "publicId": {
             "type": "string"
           },

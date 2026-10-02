@@ -1,6 +1,6 @@
 # 把它改成你的行业
 
-这份仓库默认是一个“AI 行业”的示例站：示范信源是一批公开的 AI 资讯源，精选口味是 AIHOT 在 AI 领域调了很久的那一套。要把它变成“法律热点”“HR 热点”“黄金热点”，要改的东西几乎都在 [`industry/`](../industry/) 这一个文件夹里，代码基本不用动。
+这份仓库当前开箱配置是站名为 MyHOT 的五领域站，保留了原有 AI 配置，并加入医疗、法律、军事和政策领域。精选标准、门槛和模块仍是共享配置；领域筛选质量的校准边界见 [精选与校准](selection.md)。要把它收敛为“法律热点”“HR 热点”“黄金热点”等单一行业站，要改的内容仍主要在 [`industry/`](../industry/)；先确认使用者自己的信源、重要性标准和分类，不要替他决定。
 
 如果你用 Claude Code、Codex 这类 Agent，可以把下面这段直接发给它，然后回答它的问题：
 
@@ -15,7 +15,7 @@
 ## 1. 站名和文案：`industry/site.ts`
 
 - `name`：站名。导航、标题、分享图、RSS、MCP、后台都用它。
-- `subject`：行业词。页面上“AI 日报”“全部 AI 动态”会变成“法律日报”“全部法律动态”。
+- `subject`：站点概览使用的行业词；当前多领域 MyHOT 留空。各领域页面的名称来自 `taxonomy.ts` 的 `DOMAINS`，改站点概览词不会改领域归属。
 - `homeTitle`、`description`、`tagline`：首页标题、一句话介绍、侧边栏小字。
 - `mcpPrefix`：MCP 工具名前缀，比如 `lawhot` 会得到 `lawhot_get_latest`。有人接入以后不要再改。
 - `crawlerName`：抓取信源时报的名字，别用别人的站名。
@@ -26,7 +26,8 @@
 
 ## 2. 分类、标签和主题：`industry/taxonomy.ts`、`industry/topics.json`
 
-- `CATEGORIES`：首页和“全部动态”的筛选类别。`key` 会出现在网址和接口里（`/all?category=`、`/feed/category/<key>.xml`），上线后不要改；`label` 是显示名；`section` 是日报里的分节；`guide` 告诉模型怎么归类。
+- `DOMAINS`：领域名称和稳定 key 的 owner；文章可以涉及多个领域。`all` 只表示概览或报告 scope，不是文章领域。领域 key 不在这份指南重复列举，以 [`taxonomy.ts`](../industry/taxonomy.ts) 为准。
+- `CATEGORIES`：类别与领域是独立维度。首页和“全部动态”可按类别筛选；`key` 会出现在网址和接口里，上线后不要改；`label` 是显示名；`section` 是日报里的分节；`guide` 告诉模型怎么归类。
 - `CATEGORY_TAGS`、`TOPIC_TAGS`、`ENTITY_TAGS`：模型打标签时只能从这里选。第一个标签必须是“分类标签”。
 - `ENTITIES`：行业里的主要公司或机构，用于“公司”类主题页。`IDENTITY_LEXICON`、`PUBLISHER_DOMAINS` 用来防止模型在标题摘要里写进原文没提到的公司，别的行业没有这个需要可以清空。
 - `ITEM_TYPES`：内容类型，和评分提示词里的权重表对应，改了要一起改提示词。
@@ -36,7 +37,7 @@
 
 ## 3. 信源：`industry/sources.json`
 
-这是首次启动时导入的示范信源，已经存在的不会被覆盖。上线后更常用的是后台“信源”页：能新建、试抓、调频率、看失败原因。
+这是首次启动时导入的信源，已经存在的不会被覆盖；完整配置和 URL 以 [`industry/sources.json`](../industry/sources.json) 为准，不在文档中复制名单。上线后更常用的是后台“信源”页：能新建、试抓、调频率、看失败原因。信源覆盖范围和文章领域归属的关系见[信源文档](sources.md)与[架构说明](architecture.md)。
 
 每个信源的关键字段：
 
@@ -62,7 +63,7 @@
 | `content-understanding.md` | 入选内容的写法：中文标题、答案先行的摘要、推荐理由、标签 |
 | `rules-domain.md` | 行业术语的翻译与保留规则（示例是 AI 术语：LLM 译作大语言模型、Token 保留英文……） |
 | `summarize-*.md` | 其他内容的标题摘要写法 |
-| `structure.md` | 分类、标签、主体公司、事实的结构化抽取 |
+| `structure.md` | 按文章内容判断领域，并抽取分类、标签、主体公司和事实 |
 | `group-*.md` | 事件归组：两篇报道是不是同一件事 |
 | `story-digest.md`、`report-*.md` | 事件综述、日报导语、周报月报 |
 | `translate-*.md` | 全文翻译 |
@@ -73,13 +74,7 @@
 
 ## 5. 门槛与校准：`industry/selection.ts`
 
-两次评分之和 ≥ 2 × 门槛才入选。默认门槛（T1 60、T1_5 65、T2 76）是 AIHOT 在 AI 领域校准出来的，换了行业和提示词，需要重新校准：
-
-1. 从你的信源里挑 100–200 条资料，自己标“该选 / 不该选”，存成 `.data/gold.jsonl`（格式见 [精选与校准](selection.md)，`industry/gold.example.jsonl` 有两条示例）。
-2. 运行 `node --env-file=.env scripts/eval-selection.ts --gold .data/gold.jsonl`，看准确率、查准率、查全率，和不同门槛下的结果。
-3. 在后台 SelectBench 里逐条看判错的资料，回去改评分提示词或门槛，再跑一遍。
-
-这一步决定了你的站“选得准不准”。
+门槛和五维权重由 `industry/selection.ts` 共享管理。需要调整时，按 [精选与校准](selection.md) 确认当前校准边界，再准备标注样本、运行评测并检查错例；不要凭感觉改数字。
 
 ## 6. 只对 AI 有意义的两个模块：`industry/features.ts`
 

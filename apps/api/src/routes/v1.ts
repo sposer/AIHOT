@@ -82,20 +82,21 @@ export function registerV1(app: FastifyInstance) {
   if (FEATURES.codexResetMonitor) registerCodexResets(app);
 
   app.get("/api/v1/hot-topics", publicHandler(async (req, reply) => {
-    strictQuery(req, []);
-    const body = await v1HotTopics();
+    const q = strictQuery(req, ["domain"]);
+    const body = await v1HotTopics(domainParam(q.domain));
     return sendJsonWithEtag(req, reply, body, { etagPrefix: "v1-hot", cacheControl: V1_CACHE_CONTROL.hotTopics });
   }));
 
   app.get("/api/v1/stories/:publicId", publicHandler(async (req, reply) => {
-    strictQuery(req, []);
+    const q = strictQuery(req, ["domain"]);
+    const domain = domainParam(q.domain);
     const publicId = (req.params as { publicId: string }).publicId;
     if (publicId.length > 128) throw new QueryError("publicId must be a short opaque id.");
     const found = await resolveStory(publicId);
     if (found.kind === "merged") {
-      return reply.code(308).header("Location", `/api/v1/stories/${found.target}`).header("Cache-Control", V1_CACHE_CONTROL.storyByPublicId).send();
+      return reply.code(308).header("Location", `/api/v1/stories/${found.target}${domain ? `?domain=${domain}` : ""}`).header("Cache-Control", V1_CACHE_CONTROL.storyByPublicId).send();
     }
-    const body = found.kind === "found" ? await v1Story(found.storyId) : null;
+    const body = found.kind === "found" ? await v1Story(found.storyId, domain) : null;
     if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `No public story exists for ${publicId}.`, cacheControl: "public, max-age=60" });
     return sendJsonWithEtag(req, reply, body, { etagPrefix: "v1-story", cacheControl: V1_CACHE_CONTROL.storyByPublicId });
   }));

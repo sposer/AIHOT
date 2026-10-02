@@ -275,7 +275,7 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
       <ReasonDialog
         open={!!receipt}
         title={`核对回执 #${receipt?.id ?? ""}`}
-        description="结果未知的请求不会自动重发。先到供应商控制台确认这次请求有没有计费，再放行：放行后下一次处理会重新发起调用。"
+        description="系统每 10 分钟检查未知回执，超过 30 分钟最多自动放行一次，不核对计费。重试后仍未知时，请到供应商核账，记录实际计费结果和依据后人工放行。放行会重排失败的关联文章，后续模型调用可能产生新费用。"
         confirmLabel="记录并放行"
         busy={pending === "release"}
         onClose={() => setReceipt(null)}

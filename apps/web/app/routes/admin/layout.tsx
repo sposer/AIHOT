@@ -5,6 +5,7 @@ import { NavLink, Outlet, useLocation, useNavigation, type ShouldRevalidateFunct
 import type { Route } from "./+types/layout";
 import { RingMark } from "../../components/Logo";
 import { NavigationProgress } from "../../components/shell/Chrome";
+import { ThemeSwitch } from "../../components/shell/ThemeSwitch";
 import type { AdminMe } from "../../features/admin/action";
 import { Toaster } from "../../features/admin/toast";
 import { adminGet } from "../../lib/admin.server";
@@ -95,13 +96,19 @@ export default function AdminLayout({ loaderData }: Route.ComponentProps) {
             <button type="submit" className="text-ink-4 hover:text-ink-2">退出登录</button>
           </form>
         </div>
+        <div className="mt-3 border-t border-line px-2 pt-3">
+          <ThemeSwitch className="w-full" />
+        </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur lg:hidden">
-          <div className="flex items-center gap-2 px-4 pt-3">
-            <RingMark className="size-5 text-accent" />
-            <span className="text-[14px] font-semibold text-ink">{SITE.name} 后台</span>
-            {me.dev && <span className="rounded bg-amber/15 px-1.5 text-[11px] font-medium text-amber">开发</span>}
+          <div className="flex items-center justify-between gap-3 px-4 pt-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <RingMark className="size-5 shrink-0 text-accent" />
+              <span className="truncate text-[14px] font-semibold text-ink">{SITE.name} 后台</span>
+              {me.dev && <span className="shrink-0 rounded bg-amber/15 px-1.5 text-[11px] font-medium text-amber">开发</span>}
+            </div>
+            <ThemeSwitch className="shrink-0" />
           </div>
           <nav className="no-scrollbar flex gap-1 overflow-x-auto px-3 py-2">
             {flat.map((i) => {

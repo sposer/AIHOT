@@ -3,8 +3,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/story";
 import type { StoryDetail, StoryReportView } from "@aihot/contracts/site";
+import { isDomainKey } from "@aihot/contracts/taxonomy";
 import { data as routeData } from "react-router";
-import { breadcrumbLd, pageMeta, titled } from "../lib/seo";
+import { queryString } from "../lib/api.server";
+import { DomainTabs, queryDomainHref } from "../features/feed/Filters";
+import { breadcrumbLd, listPath, pageMeta, titled } from "../lib/seo";
 import { beijingDate, beijingTime, monthDayTime, relativeTime, shortSourceName } from "../lib/format";
 import { HeatChart } from "../features/story/HeatChart";
 import { Badge, SelectedBadge } from "../components/ui/Badge";
@@ -13,26 +16,31 @@ import { Select } from "../components/ui/Controls";
 import { IconArrowLeft, IconChevronRight, IconClock, IconDoc, IconUsers } from "../components/icons";
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const res = await fetch(`${process.env.API_BASE_URL || "http://127.0.0.1:3001"}/api/site/stories/${encodeURIComponent(params.publicId)}`, { redirect: "manual", signal: AbortSignal.any([request.signal, AbortSignal.timeout(15000)]) });
+  const domain = new URL(request.url).searchParams.get("domain");
+  if (domain !== null && !isDomainKey(domain)) throw routeData({ message: "bad_request" }, { status: 400 });
+  const res = await fetch(`${process.env.API_BASE_URL || "http://127.0.0.1:3001"}/api/site/stories/${encodeURIComponent(params.publicId)}${queryString({ domain })}`, { redirect: "manual", signal: AbortSignal.any([request.signal, AbortSignal.timeout(15000)]) });
   if (res.status === 308) {
     const target = (await res.json()) as { mergedInto: string };
-    throw redirect(`/story/${target.mergedInto}`, 308);
+    throw redirect(`/story/${target.mergedInto}${queryString({ domain })}`, 308);
   }
   if (res.status === 404) throw routeData({ message: "not_found" }, { status: 404 });
+  if (res.status === 400) throw routeData({ message: "bad_request" }, { status: 400 });
   if (!res.ok) throw routeData({ message: "unavailable" }, { status: 503 });
-  return { story: (await res.json()) as StoryDetail };
+  return { story: (await res.json()) as StoryDetail, domain };
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
   if (!loaderData) return [{ title: titled("事件不存在") }, { name: "robots", content: "noindex" }];
   const s = loaderData.story;
+  const domain = isDomainKey(loaderData.domain) ? loaderData.domain : null;
+  const storyPath = listPath(`/story/${s.publicId}`, { domain });
   return pageMeta({
     title: s.title,
     description: (s.digest ?? s.summary)?.slice(0, 150) ?? `${s.sourceCount} 个报道来源 ${s.reportCount} 篇报道，完整时间线与最新进展。`,
-    path: `/story/${s.publicId}`,
-    image: `/og/stories/${s.publicId}.png`,
+    path: storyPath,
+    image: listPath(`/og/stories/${s.publicId}.png`, { domain }),
     type: "article",
-    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "热点榜", path: "/hot" }, { name: s.title, path: `/story/${s.publicId}` }]),
+    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "热点榜", path: listPath("/hot", { domain }) }, { name: s.title, path: storyPath }]),
   });
 }
 
@@ -101,7 +109,7 @@ function useActiveSection(keys: SectionKey[]): [SectionKey, (k: SectionKey) => v
     const el = document.getElementById(SECTIONS[k]);
     if (!el) return;
     el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
-    history.replaceState(history.state, "", `#${SECTIONS[k]}`);
+    history.replaceState(history.state, "", `${location.pathname}${location.search}#${SECTIONS[k]}`);
   };
   return [active, go];
 }
@@ -153,7 +161,8 @@ function TimelineRow({ r }: { r: StoryReportView }) {
 type Filter = "all" | "official" | "selected";
 
 export default function StoryPage() {
-  const { story } = useLoaderData<typeof loader>();
+  const { story, domain } = useLoaderData<typeof loader>();
+  const scope = isDomainKey(domain) ? domain : "all";
   const [filter, setFilter] = useState<Filter>("all");
   const [order, setOrder] = useState<"desc" | "asc">("desc");
   const status = STATUS[story.status];
@@ -194,12 +203,20 @@ export default function StoryPage() {
   return (
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-10">
       <nav aria-label="位置" className="flex items-center gap-2.5 pb-4 pt-5 text-[12px] text-ink-4 lg:pb-5 lg:pt-4">
-        <Link to="/hot" className="inline-flex items-center gap-1.5 transition-colors hover:text-ink">
+        <Link to={listPath("/hot", { domain })} className="inline-flex items-center gap-1.5 transition-colors hover:text-ink">
           <IconArrowLeft size={15} /> 热点榜
         </Link>
         <span className="h-3 w-px bg-line-strong" aria-hidden="true" />
         <span>事件详情</span>
       </nav>
+
+      <DomainTabs
+        scope={scope}
+        layoutId="story-domains"
+        label="事件领域"
+        getHref={(target, params) => queryDomainHref(`/story/${story.publicId}`, params, target)}
+        className="mb-5"
+      />
 
       <header className="max-w-[960px]">
         <div className="flex items-center gap-2 text-[12px] text-ink-4">
@@ -351,7 +368,7 @@ export default function StoryPage() {
               <ul className="-my-1 divide-y divide-line-soft">
                 {story.related.map((r) => (
                   <li key={r.publicId}>
-                    <Link to={`/story/${r.publicId}`} className="group flex items-baseline gap-3 py-3">
+                    <Link to={listPath(`/story/${r.publicId}`, { domain })} className="group flex items-baseline gap-3 py-3">
                       <span className="shrink-0 text-[12px] text-ink-4">{r.relation === "storyline" ? "同一故事线" : "相关事件"}</span>
                       <span className="min-w-0 flex-1 text-[14.5px] font-medium text-ink-2 transition-colors group-hover:text-accent">{r.title}</span>
                       <IconChevronRight size={14} className="shrink-0 self-center text-ink-4" />
@@ -376,7 +393,7 @@ export default function StoryPage() {
                 {story.whyHot.rank && (
                   <>
                     <span className="mx-1">·</span>
-                    <Link to="/hot" className="text-accent hover:underline">
+                    <Link to={listPath("/hot", { domain })} className="text-accent hover:underline">
                       热点榜第 {story.whyHot.rank} 名
                     </Link>
                   </>

@@ -4,6 +4,7 @@
 // never moves it; the representative is the first-party pick of the story's initiating fact.
 import type { GroupInfo, TimelineCard, TimelineFilters, TimelineResponse } from "@aihot/contracts/site";
 import { beijingDate } from "@aihot/contracts/time";
+import { normalizeDomains, type DomainKey } from "@aihot/contracts/taxonomy";
 import { sql } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import {
@@ -50,8 +51,8 @@ export function pickRepresentative<T extends RepresentativeRow>(rows: T[]): T {
  */
 async function groupPool(q: TimelineQuery, now: Date, storyIds: number[], factIds: number[]) {
   if (!storyIds.length && !factIds.length) return [];
-  return sql<{ story_id: number | null; fact_id: number; article_id: string; source_id: string; at: Date }[]>`
-    SELECT DISTINCT f.story_id, f.id AS fact_id, p.article_id, p.source_id, p.timeline_at AS at
+  return sql<{ story_id: number | null; fact_id: number; article_id: string; source_id: string; domains: DomainKey[]; at: Date }[]>`
+    SELECT DISTINCT f.story_id, f.id AS fact_id, p.article_id, p.source_id, p.domains, p.timeline_at AS at
     FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
     WHERE (f.story_id IN ${sql(storyIds.length ? storyIds : [0])} OR f.id IN ${sql(factIds.length ? factIds : [0])})
       AND p.visibility = 'public' AND p.eligible AND (NOT p.selected OR p.visible_after <= ${now}) ${filterSql(q)}`;
@@ -120,7 +121,7 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
 
   // Read only ranking fields for the whole group; bodies, media and translations are hydrated for this page's representatives.
   type Member = RepresentativeRow & Pick<ItemRow, "id" | "sort_at"> & { story_id: number | null; fact_id: number };
-  const [members, pool] = await Promise.all([
+  const [members, pool, domainPool] = await Promise.all([
     storyIds.length || factIds.length
       ? sql<Member[]>`
         SELECT p.story_id, p.fact_id, p.article_id AS id, p.first_party, p.body_mode, p.score, p.timeline_at, p.sort_at FROM publications p
@@ -128,6 +129,7 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
           AND ${selectedCondition(now)} ${filterSql(q)}`
       : Promise.resolve([] as Member[]),
     groupPool(q, now, storyIds, factIds),
+    groupPool({ channel: "all", category: null, tag: null }, now, storyIds, factIds),
   ]);
   const groupFactIds = [...new Set([...members.map((m) => m.fact_id), ...pool.map((r) => r.fact_id)])];
   const factInfo = new Map(
@@ -162,6 +164,7 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
     const newest = newestFact !== mainFact ? factInfo.get(newestFact) : undefined;
     const group: GroupInfo = {
       factId: factInfo.get(mainFact)?.public_id ?? String(mainFact),
+      domains: normalizeDomains(domainPool.filter((r) => isStory ? r.story_id === id : r.fact_id === id).flatMap((r) => r.domains)),
       story: null,
       additionalSourceCount: Math.max(0, new Set(mainReports.map((r) => r.source_id)).size - 1),
       // Reports of the facts that have a selected report (the developments), counted once each.

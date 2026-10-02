@@ -45,7 +45,7 @@ export const TOPIC_TAGS = [
 ] as const;
 
 /** 可选的实体标签（公司、机构、平台）。 */
-export const ENTITY_TAGS = ["OpenAI", "Anthropic", "DeepSeek", "DeepMind", "Google", "Meta", "Microsoft", "xAI", "Hugging Face", "GitHub", "arXiv"] as const;
+export const ENTITY_TAGS = ["OpenAI", "Anthropic", "DeepSeek", "DeepMind", "Google", "Meta", "Microsoft", "xAI", "Hugging Face", "GitHub", "arXiv", "WHO", "FDA", "国家卫健委", "国务院", "最高人民法院", "RAND", "RUSI"] as const;
 
 /** 模型常写的近义词，统一成词表里的写法。 */
 export const TAG_SYNONYMS: Readonly<Record<string, string>> = {
@@ -85,6 +85,14 @@ export const ENTITIES: Record<string, { name: string; displayTag: string | null;
   "hugging-face": { name: "Hugging Face", displayTag: "Hugging Face", aliases: ["Hugging Face"] },
   cursor: { name: "Cursor", displayTag: null, aliases: ["Cursor", "Anysphere"] },
   openrouter: { name: "OpenRouter", displayTag: null, aliases: ["OpenRouter"] },
+  vllm: { name: "vLLM", displayTag: null, aliases: ["vLLM"] },
+  who: { name: "世界卫生组织", displayTag: "WHO", aliases: ["WHO", "World Health Organization", "世界卫生组织", "世卫组织"] },
+  fda: { name: "美国食品药品监督管理局", displayTag: "FDA", aliases: ["FDA", "Food and Drug Administration"] },
+  "china-nhc": { name: "国家卫生健康委员会", displayTag: "国家卫健委", aliases: ["国家卫生健康委员会", "国家卫健委"] },
+  "china-state-council": { name: "国务院", displayTag: "国务院", aliases: ["国务院", "State Council"] },
+  "china-supreme-court": { name: "最高人民法院", displayTag: "最高人民法院", aliases: ["最高人民法院", "Supreme People's Court"] },
+  rand: { name: "RAND", displayTag: "RAND", aliases: ["RAND Corporation", "RAND", "兰德公司"] },
+  rusi: { name: "RUSI", displayTag: "RUSI", aliases: ["RUSI", "Royal United Services Institute"] },
 };
 
 /**
@@ -124,6 +132,13 @@ export const IDENTITY_LEXICON: ReadonlyArray<{ id: string; name: string; pattern
   { id: "apple", name: "Apple AI", patterns: [/\bapple\s?(intelligence|silicon|ai)\b|苹果(智能|\s?AI)/i] },
   { id: "amazon", name: "Amazon / AWS", patterns: [/amazon|\baws\b|亚马逊/i] },
   { id: "baidu", name: "百度文心", patterns: [/百度|baidu|文心|\bernie\s?bot\b/i] },
+  { id: "who", name: "世界卫生组织", patterns: [/\bWHO\b|World Health Organization|世界卫生组织|世卫组织/] },
+  { id: "fda", name: "FDA", patterns: [/\bFDA\b|Food and Drug Administration/i] },
+  { id: "china-nhc", name: "国家卫健委", patterns: [/国家卫生健康委员会|国家卫健委/] },
+  { id: "china-state-council", name: "国务院", patterns: [/国务院|\bState Council\b/i] },
+  { id: "china-supreme-court", name: "最高人民法院", patterns: [/最高人民法院|Supreme People's Court/i] },
+  { id: "rand", name: "RAND", patterns: [/\bRAND\b|兰德公司/] },
+  { id: "rusi", name: "RUSI", patterns: [/\bRUSI\b|Royal United Services Institute/i] },
 ];
 
 /** 这些域名上的文章，发布方就是对应的公司（托管平台如 GitHub、arXiv 不算）。 */
@@ -139,6 +154,14 @@ export const PUBLISHER_DOMAINS: ReadonlyArray<{ entityId: string; domains: reado
   { entityId: "qwen", domains: ["qwen.ai"] },
   { entityId: "cursor", domains: ["cursor.com"] },
   { entityId: "openrouter", domains: ["openrouter.ai"] },
+  { entityId: "who", domains: ["who.int"] },
+  { entityId: "fda", domains: ["fda.gov"] },
+  { entityId: "china-nhc", domains: ["nhc.gov.cn"] },
+  // decision: attribute www.gov.cn; not all gov.cn hosts because courts and other agencies have their own publishers.
+  { entityId: "china-state-council", domains: ["www.gov.cn"] },
+  { entityId: "china-supreme-court", domains: ["court.gov.cn"] },
+  { entityId: "rand", domains: ["rand.org"] },
+  { entityId: "rusi", domains: ["rusi.org"] },
 ];
 
 /** 原文里的这些写法也算提到了对应公司。 */

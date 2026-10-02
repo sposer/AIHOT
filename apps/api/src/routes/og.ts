@@ -2,7 +2,7 @@
 // gets a card; anything else is a real 404.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isReportScope } from "@aihot/contracts/site";
-import { CATEGORY_LABELS, DOMAIN_LABELS } from "@aihot/contracts/taxonomy";
+import { CATEGORY_LABELS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
 import { beijingDate } from "@aihot/contracts/time";
 import { loadItemShare } from "@aihot/backend/publication/og";
 import { loadReport, type ReportKind } from "@aihot/backend/publication/reports";
@@ -122,10 +122,11 @@ export function registerOg(app: FastifyInstance) {
 
   app.get("/og/stories/:file", async (req, reply) => {
     const file = (req.params as { file: string }).file;
-    if (!file.endsWith(".png")) return notFound(reply);
+    const domain = (req.query as Record<string, string>).domain ?? null;
+    if (!file.endsWith(".png") || (domain !== null && !isDomainKey(domain))) return notFound(reply);
     const found = await resolveStory(file.slice(0, -4));
     if (found.kind !== "found") return notFound(reply);
-    const s = await loadStoryDetail(found.storyId);
+    const s = await loadStoryDetail(found.storyId, new Date(), domain);
     if (!s) return notFound(reply);
     return send(req, reply, {
       kicker: s.whyHot.rank ? `热点第 ${s.whyHot.rank} · 事件` : "事件",

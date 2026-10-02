@@ -73,10 +73,12 @@ const SEARCH_INPUT = z.strictObject({
   limit: z.number().int().min(1).max(30).default(10).describe("Maximum number of results, from 1 to 30."),
 });
 const HOT_INPUT = z.strictObject({
+  domain,
   limit: z.number().int().min(1).max(10).default(10).describe("Maximum number of current topics, from 1 to 10."),
 });
 const STORY_INPUT = z.strictObject({
-  public_id: z.string().min(1).max(128).describe(`Opaque story public ID. Obtain it from the final path segment of ${T.hot} links.story; never guess it.`),
+  domain,
+  public_id: z.string().min(1).max(128).describe(`Opaque story public ID. Obtain it from the URL pathname of ${T.hot} links.story, preserving domain; never guess it.`),
   report_limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of timeline reports, from 1 to 50."),
 });
 const DAILY_INPUT = z.strictObject({
@@ -161,11 +163,11 @@ export function buildMcpServer(): McpServer {
       annotations: ANNOTATIONS,
     },
     safe(T.hot, async (args: z.infer<typeof HOT_INPUT>) => {
-      const all = await recent("hot", () => v1HotTopics());
+      const all = await recent(`hot:${args.domain ?? "all"}`, () => v1HotTopics(args.domain ?? null));
       const items = all.items.slice(0, args.limit);
       const lines = [`${SITE.name} 当前热点（${items.length} 个）`, ""];
       for (const t of items) {
-        const publicId = t.links.story.split("/").pop();
+        const publicId = new URL(t.links.story).pathname.split("/").pop();
         lines.push(`第 ${t.rank} 名：${t.title}`, `信源：${t.sourceNames.join("、")}`, `最新进展：${t.latestAt}`, `${SITE.name}：${t.links.aihot}`, `事件 public_id：${publicId}`, `事件页：${t.links.story}`, "");
       }
       return ok(lines.join("\n").trimEnd(), { schemaVersion: 1, count: items.length, items });
@@ -182,7 +184,7 @@ export function buildMcpServer(): McpServer {
     safe(T.story, async (args: z.infer<typeof STORY_INPUT>) => {
       let found = await resolveStory(args.public_id.trim());
       if (found.kind === "merged") found = await resolveStory(found.target);
-      const body = found.kind === "found" ? await v1Story(found.storyId) : null;
+      const body = found.kind === "found" ? await v1Story(found.storyId, args.domain ?? null) : null;
       if (!body) return fail("not_found", `没有这个公开事件；只使用 ${T.hot} 返回的 public_id。`);
       const story = { ...body.story, reports: body.story.reports.slice(0, args.report_limit) };
       const lines = [`${SITE.name} 事件：${story.title}`, `状态：${story.status === "active" ? "持续更新" : "历史事件"}｜${story.reportCount} 篇报道｜${story.sourceCount} 个来源`, `最新进展：${story.latest}`];

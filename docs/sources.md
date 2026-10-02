@@ -1,6 +1,6 @@
 # 信源
 
-信源在后台“信源”页管理：新建、试抓一次看看抓到什么、改频率、启停、看失败原因和最近的条目。首次启动时，`industry/sources.json` 里的示范信源会被导入。
+信源在后台“信源”页管理：新建、试抓一次看看抓到什么、改频率、启停、看失败原因和最近的条目。首次启动时会导入 [`industry/sources.json`](../industry/sources.json) 中的配置；完整信源名单和 URL 只在该文件维护，本文不重复罗列。
 
 ## 创建时确定获取策略
 
@@ -10,6 +10,7 @@
 - `interval_minutes` 抓取间隔
 - `config` 中的请求方法与请求头、列表解析规则、详情页补抓、`fetchPublicContent` 正文抓取、URL 允许或拒绝前缀、排序和噪声过滤
 - `participation_mode`、分级、标签，以及站内和联合输出是否允许全文
+- `domains`：信源覆盖领域，只作为来源上下文；不为该来源的文章分配领域，也不是文章归属的回退值。文章领域由逐篇结构化分析或人工 override 决定，见[精选与校准](selection.md)。
 
 之后可以在后台修改、试抓和手工强制抓取。每种 `kind` 支持的 `config` 项以 `packages/backend/src/sources/config-keys.ts` 为准；不认识的配置在保存和抓取边界都会明确拒绝，不会退回通用解析。
 
@@ -30,7 +31,7 @@
 { "feedUrl": "https://example.com/feed.xml" }
 ```
 
-RSS、RDF 的 `content:encoded` 和 Atom 的 `content` 默认作为正文候选；只给摘要的订阅设置 `contentIsBody: false`，这些字段保留为 `excerpt`，不把文章标记为已取得正文。Nature Medicine 的订阅使用这一配置；全文通过原文页面的既有提取任务取得，再以新 revision 进入分析，不靠字段名或摘要长度推断全文。
+RSS、RDF 的 `content:encoded` 和 Atom 的 `content` 默认作为正文候选；只给摘要的订阅设置 `contentIsBody: false`，这些字段保留为 `excerpt`，文章正文保持 pending。Nature Medicine 使用此配置：摘要先进入资料流程，随后由现有原文页面提取器取得正文并形成新 revision，再进入分析；不靠字段名或摘要长度推断全文。它的 `site_fulltext` 仍为关闭状态，公开页面继续只展示摘要和原文链接，内部取得正文不改变展示许可。
 
 `summaryIsBody: true` 表示 RSS 的 `description` 本身就是全文，默认关闭。`fetchPublicContent: true` 请求补抓缺失正文，不会替换已经确认的完整订阅正文；它与站内、对外的全文展示许可独立。`allowCategories` / `denyCategories` 按订阅里的分类过滤。
 
@@ -49,6 +50,7 @@ RSS、RDF 的 `content:encoded` 和 Atom 的 `content` 默认作为正文候选�
 - `parseMode`：`html`（默认，用选择器）、`markdown`（经 Jina 渲染后按 Markdown 读）、`docusaurus_changelog`。
 - `detail`：列表缺日期、标题或摘要时抓详情页补齐（`publishedAtSelector`、`titleSelector`、`summarySelector` 等）。
 - `allowUrlPrefixes` / `denyUrlPrefixes`：只收某些路径下的文章。
+- 数值年月日格式的日期或无时区时间按 `publishedAtUtcOffset` 解释，默认 `+08:00`；带显式时区的时间戳保留其瞬时，包括 `Z`、数值 offset、`UTC` 和 `GMT`，不套用配置 offset。
 
 ### json_list
 

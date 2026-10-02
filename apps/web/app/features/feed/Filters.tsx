@@ -1,7 +1,8 @@
 // Feed filters: the channel and category row, and search.
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, useNavigation, useSearchParams } from "react-router";
-import { CATEGORY_KEYS, CATEGORY_LABELS, CHANNEL_LABELS, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
+import { CATEGORY_KEYS, CATEGORY_LABELS, CHANNEL_LABELS, DOMAIN_KEYS, DOMAIN_LABELS, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
+import type { ReportScope } from "@aihot/contracts/site";
 import { IconClose, IconSearch } from "../../components/icons";
 import { PillTabs } from "../../components/ui/Tabs";
 
@@ -14,8 +15,45 @@ export function hrefWith(base: string, params: URLSearchParams, patch: Record<st
   }
   sp.delete("page");
   sp.delete("cursor");
+  sp.delete("deep");
+  sp.delete("anchorAt");
   const s = sp.toString();
   return s ? `${base}?${s}` : base;
+}
+
+/** Keep the active query context while changing a domain in a query-scoped view. */
+export function queryDomainHref(base: string, params: URLSearchParams, scope: ReportScope) {
+  return hrefWith(base, params, { domain: scope === "all" ? null : scope });
+}
+
+/** Shared six-scope navigation for the feed, domain-filtered public views and report navigation. */
+export function DomainTabs({ scope, getHref, layoutId, label = "切换领域", overviewLabel = "全部", size = "sm", fill = true, className = "" }: {
+  scope: ReportScope;
+  getHref: (scope: ReportScope, params: URLSearchParams) => string;
+  layoutId: string;
+  label?: string;
+  overviewLabel?: string;
+  size?: "md" | "sm" | "xs";
+  fill?: boolean;
+  className?: string;
+}) {
+  const [params] = useSearchParams();
+  const scopes: ReportScope[] = ["all", ...DOMAIN_KEYS];
+  return (
+    <PillTabs
+      fill={fill}
+      layoutId={layoutId}
+      label={label}
+      active={scope}
+      size={size}
+      className={className}
+      items={scopes.map((target) => ({
+        key: target,
+        label: target === "all" ? overviewLabel : DOMAIN_LABELS[target],
+        to: getHref(target, new URLSearchParams(params)),
+      }))}
+    />
+  );
 }
 
 /**

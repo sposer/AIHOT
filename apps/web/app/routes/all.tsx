@@ -5,7 +5,7 @@ import type { PoolResponse } from "@aihot/contracts/site";
 import { DOMAIN_LABELS, isCategoryKey, isChannelKey, isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString } from "../lib/api.server";
 import { listPath, pageMeta } from "../lib/seo";
-import { CategoryTabs, SearchField } from "../features/feed/Filters";
+import { CategoryTabs, DomainTabs, SearchField, hrefWith } from "../features/feed/Filters";
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState } from "../components/ui/Page";
@@ -65,7 +65,7 @@ export default function AllPage() {
   const f = data.filters;
   const busy = navigation.state === "loading" && navigation.location?.pathname === base;
   const pageTitle = f.domain ? `${DOMAIN_LABELS[f.domain]}动态` : "动态";
-  const keep = { channel: f.channel === "all" ? null : f.channel, category: f.category };
+  const keep = { channel: f.channel === "all" ? null : f.channel, category: f.category, tag: f.tag };
   const searchTabHref = (tab: "time" | "relevance") => {
     const sp = new URLSearchParams(params);
     sp.delete("page");
@@ -81,13 +81,20 @@ export default function AllPage() {
       {/* Desktop, as on 精选: the title, then one filter row with the search field aligned on the right. */}
       <div className="hidden lg:block">
         <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">{title ?? pageTitle}</h1>
-        <div className="mb-5 mt-4 flex items-center justify-between gap-4">
+        <DomainTabs
+          scope={f.domain ?? "all"}
+          layoutId="all-domains-desk"
+          label="动态领域"
+          getHref={(scope, current) => hrefWith(scope === "all" ? "/all" : `/all/${scope}`, current, { domain: null })}
+          className="mt-4"
+        />
+        <div className="mb-5 mt-3 flex items-center justify-between gap-4">
           <CategoryTabs base={base} category={f.category} channel={f.channel} layoutId="all-cat-desk" className="min-w-0" />
           <SearchField action={base} variant="track" defaultValue={f.q ?? ""} keep={keep} />
         </div>
       </div>
 
-      {/* Phones: title with today's count, the search bar, then the same filter row as 精选. */}
+      {/* Phones: title, domain, search and the category/channel row. */}
       <div className="lg:hidden">
         <div className="flex items-baseline justify-between pb-3 pt-5">
           <h1 className="text-[22px] font-bold text-ink">{title ?? pageTitle}</h1>
@@ -97,7 +104,17 @@ export default function AllPage() {
             </span>
           )}
         </div>
-        <SearchField action={base} variant="bar" defaultValue={f.q ?? ""} keep={keep} autoFocus={params.get("search") === "1"} />
+        <div className="-mx-4 px-4">
+          <DomainTabs
+            scope={f.domain ?? "all"}
+            layoutId="all-domains-mobile"
+            label="动态领域"
+            getHref={(scope, current) => hrefWith(scope === "all" ? "/all" : `/all/${scope}`, current, { domain: null })}
+          />
+        </div>
+        <div className="mt-3">
+          <SearchField action={base} variant="bar" defaultValue={f.q ?? ""} keep={keep} autoFocus={params.get("search") === "1"} />
+        </div>
         <div className="-mx-4 mt-3 border-b border-line-soft px-4 pb-3">
           <CategoryTabs base={base} category={f.category} channel={f.channel} layoutId="all-cat-mobile" size="sm" className="min-w-0" />
         </div>
@@ -151,7 +168,7 @@ export function SearchBusy() {
       <h1 className="text-[20px] font-bold text-ink">搜索有点忙</h1>
       <p className="mt-2 text-[14px] leading-relaxed text-ink-3">现在搜索的人比较多，请稍等几秒再试。列表浏览不受影响。</p>
       <div className="mt-6 flex justify-center gap-2.5">
-        <Link to="/all" className="inline-flex h-9 items-center rounded-full bg-accent px-4 text-[13.5px] font-medium text-accent-contrast hover:bg-accent-ink">浏览全部动态</Link>
+        <Link to="/all" className="inline-flex h-9 items-center rounded-full bg-accent px-4 text-[13.5px] font-medium text-accent-contrast hover:bg-accent-ink">浏览动态</Link>
         <Link to="/" className="inline-flex h-9 items-center rounded-full border border-line-strong bg-surface px-4 text-[13.5px] text-ink-2 hover:border-ink-4">回到精选</Link>
       </div>
     </div>

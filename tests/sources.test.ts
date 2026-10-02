@@ -9,7 +9,7 @@ import http from "node:http";
 import { after, test } from "node:test";
 import { config } from "@aihot/backend/config";
 import { sanitizeBody, trimTrailingChrome } from "@aihot/backend/content/sanitize";
-import { fetchDetail, fetchWebList, fromHtml, fromMarkdown } from "@aihot/backend/sources/web-list";
+import { fetchDetail, fetchWebList, fromHtml, fromMarkdown, parseLooseDate } from "@aihot/backend/sources/web-list";
 import { fetchRss } from "@aihot/backend/sources/rss";
 import { fetchJsonList } from "@aihot/backend/sources/json-list";
 import { noiseFiltered } from "@aihot/backend/sources/collect";
@@ -46,6 +46,14 @@ const pages: Record<string, (cdn: string) => string> = {
   "/ld-post": () =>
     `<html><head><script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","name":"Blog"},` +
     `{"@type":"BlogPosting","headline":"Turn REST APIs into MCP tools","datePublished":"2026-09-24"}]}</script></head><body><p>Post</p></body></html>`,
+  "/ld-z": () =>
+    `<html><head><script type="application/ld+json">{"datePublished":"2026-09-24T10:30:00Z"}</script></head><body><p>Post</p></body></html>`,
+  "/ld-offset": () =>
+    `<html><head><script type="application/ld+json">{"datePublished":"2026-09-24T10:30:00+05:30"}</script></head><body><p>Post</p></body></html>`,
+  // Representative native fields used by government and court pages.
+  "/gov-post": () => `<html><head><meta name="pubdate" content="2026-09-24"></head><body><p>Notice</p></body></html>`,
+  "/court-post": () => `<html><body><time datetime="2026年9月24日 10:30">2026年9月24日 10:30</time></body></html>`,
+  "/changelog.html": () => `<article><h2 id="release">Release 2026-09-24</h2><p>Release details.</p></article>`,
   "/cdn/static/js/lib-react.a6be410a.js": () => '"use strict";(self.webpackChunk=self.webpackChunk||[]).push([["lib-react"],{}]);',
   "/cdn/static/js/index.c5195ace.js": (cdn) =>
     '(()=>{var e={},a={};function t(d){return a[d]}t.u=e=>"static/js/async/"+e+"."+({6159:"4efb0769",7298:"a1b2c3d4",8557:"2d420be2"})[e]+".js",' +
@@ -221,9 +229,103 @@ test("noise words match whatever their case", () => {
   assert.equal(noiseFiltered(c("iPhone 18 开售", ""), source), true);
 });
 
-test("dates in yyyymmdd and in JSON-LD are read", async () => {
+test("date-only and timezone-less clocks use the configured offset; zoned timestamps remain instants", () => {
+  const iso = (value: string, offset?: string) => parseLooseDate(value, offset)?.toISOString() ?? null;
+  assert.deepEqual([
+    iso("2026-09-24"),
+    iso("2026-09-24", "+00:00"),
+    iso("2026/9/24", "+08:00"),
+    iso("2026/9/24 10:30"),
+    iso("2026年9月24日", "+00:00"),
+    iso("2026年9月24日 10:30", "+00:00"),
+    iso("发布时间：2026年9月24日", "+00:00"),
+    iso("2026-09-24T10:30:00", "+08:00"),
+    iso("2026/9/24 10:30:00.125", "+08:00"),
+    iso("2026/9/24 10:30:00.123456", "+08:00"),
+    iso("2026-09-24T10:30:00Z", "+08:00"),
+    iso("2026-09-24T10:30:00+05:30", "+08:00"),
+    iso("2026-09-24 10:30:00 UTC", "+08:00"),
+    iso("2026/09/24 10:30:00 GMT", "+08:00"),
+    iso("2026/09/24 10:30:00 GMT+0530", "+08:00"),
+    iso("2026/09/24 10:30:00 PST", "+08:00"),
+    iso("2026-09-24 UTC", "+08:00"),
+    iso("2026/09/24 UTC 10:30", "+08:00"),
+    iso("10:30 UTC 2026/09/24", "+08:00"),
+    iso("Release 2026-09-24", "+08:00"),
+    iso("2026-09-24 12:30 AM", "+00:00"),
+    iso("Wed 2026-09-24 10:30", "+00:00"),
+    iso("2026-09-24 10:30 (UTC)", "+00:00"),
+    iso("Release 2026-09-30 — new features", "+08:00"),
+    iso("2026年9月30日发布", "+08:00"),
+  ], [
+    "2026-09-23T16:00:00.000Z",
+    "2026-09-24T00:00:00.000Z",
+    "2026-09-23T16:00:00.000Z",
+    "2026-09-24T02:30:00.000Z",
+    "2026-09-24T00:00:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-24T00:00:00.000Z",
+    "2026-09-24T02:30:00.000Z",
+    "2026-09-24T02:30:00.125Z",
+    "2026-09-24T02:30:00.123Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-24T05:00:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-24T05:00:00.000Z",
+    "2026-09-24T18:30:00.000Z",
+    "2026-09-24T00:00:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-23T16:00:00.000Z",
+    "2026-09-24T00:30:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-29T16:00:00.000Z",
+    "2026-09-29T16:00:00.000Z",
+  ]);
+});
+
+test("dates in yyyymmdd, JSON-LD and native detail fields honor the source offset", async () => {
   const days = await fetchJsonList({ id: "test-json", config: { url: `${site}/days.json`, itemsPath: "data.list", titlePaths: ["ttl"], urlTemplate: "https://example.org/blog/view?seq={seq}", publishedAtPath: "day", publishedAtUnit: "yyyymmdd" } } as never);
   assert.deepEqual(days.map((c) => c.publishedAt?.toISOString() ?? null), ["2026-09-22T00:00:00.000Z", null], "February 30 is no date");
-  const got = await fetchDetail(`${site}/ld-post`, { id: "test-feed", config: { detail: { maxFetches: 20 } } } as never, { date: true, title: false, summary: false, body: false });
-  assert.equal(got.publishedAt?.toISOString(), "2026-09-24T00:00:00.000Z");
+  const changelog = await fetchWebList(source({ url: `${site}/changelog.html`, parseMode: "docusaurus_changelog", publishedAtUtcOffset: "+00:00" }));
+  assert.deepEqual(changelog.map((c) => c.publishedAt?.toISOString() ?? null), ["2026-09-24T00:00:00.000Z"]);
+  const fetchDate = async (path: string, offset?: string) => (await fetchDetail(
+    `${site}/${path}`,
+    source({ detail: { maxFetches: 20, publishedAtUtcOffset: offset } }),
+    { date: true, title: false, summary: false, body: false },
+  )).publishedAt?.toISOString() ?? null;
+  assert.deepEqual([
+    await fetchDate("ld-post"),
+    await fetchDate("ld-post", "+00:00"),
+    await fetchDate("ld-z", "+08:00"),
+    await fetchDate("ld-offset", "+08:00"),
+    await fetchDate("gov-post", "+08:00"),
+    await fetchDate("court-post", "+00:00"),
+  ], [
+    "2026-09-23T16:00:00.000Z",
+    "2026-09-24T00:00:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+    "2026-09-24T05:00:00.000Z",
+    "2026-09-23T16:00:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+  ]);
+});
+
+test("government and court listing dates from native HTML fields use their source offsets", () => {
+  const government = fromHtml(
+    `<ul><li><a href="/notices/policy">Government policy notice</a><span class="publish-date">2026年9月24日 10:30</span></li></ul>`,
+    `${site}/gov-list`,
+    source({ url: `${site}/gov-list`, itemSelector: "li", linkSelector: "a", titleSelector: "a", publishedAtSelector: ".publish-date", publishedAtUtcOffset: "+08:00" }),
+  );
+  const court = fromHtml(
+    `<ul><li><a href="/judgments/case">Court judgment notice</a><time datetime="2026-09-24T10:30">2026-09-24 10:30</time></li></ul>`,
+    `${site}/court-list`,
+    source({ url: `${site}/court-list`, itemSelector: "li", linkSelector: "a", titleSelector: "a", publishedAtSelector: "time", publishedAtUtcOffset: "+00:00" }),
+  );
+  assert.deepEqual([government[0]?.publishedAt?.toISOString(), court[0]?.publishedAt?.toISOString()], [
+    "2026-09-24T02:30:00.000Z",
+    "2026-09-24T10:30:00.000Z",
+  ]);
 });

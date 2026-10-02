@@ -18,6 +18,8 @@ let deadline: number;
 let refreshAt: string;
 let metaDelayMs = 0;
 const apiCookies: Array<string | undefined> = [];
+const apiUrls: string[] = [];
+let reportIndexLimit: number | null = null;
 const reportKeys: Record<ReportKind, string[]> = {
   daily: ["2026-09-28", "2026-09-27", "2026-09-26", "2026-09-25"],
   weekly: ["2026-W39", "2026-W38", "2026-W37", "2026-W36"],
@@ -25,6 +27,7 @@ const reportKeys: Record<ReportKind, string[]> = {
 };
 const api = createServer((req, res) => {
   const url = new URL(req.url!, "http://api.local");
+  apiUrls.push(url.pathname + url.search);
   apiCookies.push(req.headers.cookie);
   res.setHeader("Content-Type", "application/json");
   if (url.pathname === "/api/site/meta") {
@@ -40,8 +43,8 @@ const api = createServer((req, res) => {
   if (url.pathname === "/api/site/pool") {
     const domain = url.searchParams.get("domain");
     return res.end(JSON.stringify({
-      filters: { domain, channel: "all", category: null, tag: null, q: null, tab: "time" },
-      items: [], page: 1, pageCount: 1, total: 0, todayCount: 0, freshness: "2026-09-28T00:00:00Z", generatedAt: "2026-09-28T00:00:00Z",
+      filters: { domain, channel: url.searchParams.get("channel") ?? "all", category: url.searchParams.get("category"), tag: url.searchParams.get("tag"), q: url.searchParams.get("q"), tab: "time" },
+      items: [], page: Number(url.searchParams.get("page") ?? 1), pageCount: 3, total: 0, todayCount: 0, freshness: "2026-09-28T00:00:00Z", generatedAt: "2026-09-28T00:00:00Z",
     }));
   }
   const reportRoute = /^\/api\/site\/reports\/(daily|weekly|monthly)(?:\/|$)/.exec(url.pathname);
@@ -52,18 +55,33 @@ const api = createServer((req, res) => {
     const last = url.pathname.split("/").at(-1)!;
     const key = keys.includes(last) ? last : keys[0]!;
     const at = keys.indexOf(key);
-    const index = keys.map((key, i) => ({ scope, key, title: i === 0 ? `edition-${scope}` : null, generatedAt: "2026-09-28T00:00:00Z", count: 0 }));
+    const index = keys.slice(0, reportIndexLimit ?? keys.length).map((key, i) => ({ scope, key, title: i === 0 ? `edition-${scope}` : null, generatedAt: "2026-09-28T00:00:00Z", count: 0 }));
     const report = {
       kind, scope, key, title: `edition-${scope}`, windowStart: "2026-09-27T00:00:00Z", windowEnd: "2026-09-28T00:00:00Z",
       generatedAt: "2026-09-28T00:00:00Z", revision: 1, lead: at === 0 ? { title: `edition-${scope}`, leadParagraph: "临床研究" } : null,
       overview: null, highlights: [], sections: [], stories: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1,
       prev: keys[at + 1] ?? null, next: keys[at - 1] ?? null,
     };
-    if (url.pathname.endsWith("/latest-page")) return res.end(JSON.stringify({ scope, index, report }));
+    if (url.pathname.endsWith("/latest-page")) return res.end(JSON.stringify({ scope, index, report: index.length ? report : null }));
     if (url.pathname === `/api/site/reports/${kind}` || url.pathname.includes("/navigation/") || url.pathname.includes("/months/")) return res.end(JSON.stringify({ scope, items: index }));
     return res.end(JSON.stringify(report));
   }
-  if (url.pathname === "/api/site/hot") return res.end(JSON.stringify({ entries: [] }));
+  if (url.pathname === "/api/site/hot") return res.end(JSON.stringify({ computedAt: "2026-09-28T00:00:00Z", entries: [{
+    rank: 1, domains: ["ai", "medical"], story: { publicId: "scoped-story", title: "Cross-domain story" },
+    heat: 20, trend: "flat", trendPct: 0, badges: [], participantCount: 2, sourceCount: 1, signalCount: 0, reportCount: 1,
+    sourceNames: ["Source"], latestAt: "2026-09-28T00:00:00Z", firstReportAt: "2026-09-28T00:00:00Z",
+    representative: { id: "medical-item", url: "https://example.org/medical", sourceName: "Source" },
+    participants: [], spark: [], summary: null, latest: null, cover: null,
+  }] }));
+  const topic = { slug: "scoped-topic", name: "Scoped topic", group: "field", definition: "Topic definition", total: 21, recent: 21, indexable: true, latestAt: "2026-09-28T00:00:00Z" };
+  if (url.pathname === "/api/site/topics") return res.end(JSON.stringify({ topics: [topic] }));
+  if (url.pathname === "/api/site/topics/scoped-topic") return res.end(JSON.stringify({ topic: { ...topic, related: [{ slug: "related-topic", name: "Related" }] }, items: [], page: Number(url.searchParams.get("page") ?? 1), pageCount: 2 }));
+  if (url.pathname === "/api/site/stories/scoped-story") return res.end(JSON.stringify({
+    publicId: "scoped-story", title: "Cross-domain story", domains: ["ai", "medical"], status: "active", sourceCount: 1, reportCount: 1,
+    firstReportAt: "2026-09-28T00:00:00Z", latestAt: "2026-09-28T00:00:00Z", digest: null, digestUpdatedAt: null,
+    summary: null, excerpt: null, latest: null, whyHot: { participants48h: 2, newParticipants6h: 1, recentReports24h: 1, observationComplete: true, rank: 1, heat: 20 },
+    developments: [], officialReports: [], timeline: [], heat: [], related: [{ publicId: "related-story", title: "Related", relation: "related", latestAt: "2026-09-28T00:00:00Z" }],
+  }));
   if (url.pathname === "/api/site/echo-client") return res.end(JSON.stringify({ forwarded: req.headers["x-forwarded-for"], real: req.headers["x-real-ip"] }));
   if (url.pathname === "/api/site/items/long-lived") return res.end(JSON.stringify({ id: "long-lived", title: "t" }));
   if (url.pathname === "/api/site/contact") return res.end(JSON.stringify({ wechatQr: "/qr.png", feishuQr: "/qr.png" }));
@@ -152,7 +170,7 @@ test("missing routes cannot be hidden by a root-only request; errors and redirec
     assert.equal(res.headers.get("X-Accel-Expires"), "0");
     await res.text();
   }
-  for (const [pathname, target] of [["/story/merged.data?_routes=root", "/story/surviving-story"], ["/_.data?q=search&_routes=root", "/all?q=search"]]) {
+  for (const [pathname, target] of [["/story/merged.data?_routes=root", "/story/surviving-story"], ["/story/merged.data?domain=medical&_routes=root", "/story/surviving-story?domain=medical"], ["/_.data?q=search&_routes=root", "/all?q=search"]]) {
     const res = await fetch(origin + pathname);
     assert.equal(res.status, 202);
     assert.equal(res.headers.get("Cache-Control"), "private, no-store");
@@ -295,5 +313,66 @@ test("domain pages and editions retain their scope through SSR, navigation and c
     const res = await fetch(origin + pathname);
     assert.equal(res.status, 404, pathname);
     await res.text();
+  }
+});
+
+
+test("domain navigation preserves query context and forwards hot, story and topic scope", async () => {
+  const paths = [
+    "/all/medical?q=clinical&category=paper&channel=news&tag=clinical&page=3&cursor=old",
+    "/hot?domain=medical", "/story/scoped-story?domain=medical", "/topics?domain=medical",
+    "/topics/scoped-topic/page/2?domain=medical",
+  ];
+  apiUrls.length = 0;
+  const pages = [];
+  for (const path of paths) {
+    const res = await fetch(origin + path);
+    assert.equal(res.status, 200, path);
+    pages.push(load(await res.text()));
+  }
+  const [all, hot, story, topics, topic] = pages;
+  const switchUrl = new URL(all!("nav[aria-label='动态领域'] a[href^='/all/legal']").first().attr("href")!, origin);
+  assert.equal(switchUrl.pathname, "/all/legal");
+  for (const [key, value] of Object.entries({ q: "clinical", category: "paper", channel: "news", tag: "clinical" })) assert.equal(switchUrl.searchParams.get(key), value);
+  assert.equal(switchUrl.searchParams.has("page"), false);
+  assert.equal(switchUrl.searchParams.has("cursor"), false);
+  assert.ok(hot!("a[href='/story/scoped-story?domain=medical']").length > 0);
+  assert.ok(story!("a[href='/hot?domain=medical']").length > 0);
+  assert.ok(story!("a[href='/story/related-story?domain=medical']").length > 0);
+  assert.ok(topics!("a[href='/topics/scoped-topic?domain=medical']").length > 0);
+  assert.ok(topic!("nav[aria-label='分页'] a[href='/topics/scoped-topic?domain=medical']").length > 0);
+  assert.ok(topic!("a[href='/topics/related-topic?domain=medical']").length > 0);
+  assert.ok(topic!("nav[aria-label='主题领域'] a[href='/topics/scoped-topic?domain=ai']").length > 0);
+  for (const path of ["/api/site/hot", "/api/site/stories/scoped-story", "/api/site/topics", "/api/site/topics/scoped-topic"]) {
+    assert.ok(apiUrls.some((value) => {
+      const u = new URL(value, "http://api.local");
+      return u.pathname === path && u.searchParams.get("domain") === "medical";
+    }), path);
+  }
+  assert.ok(apiUrls.some((value) => {
+    const u = new URL(value, "http://api.local");
+    return u.pathname === "/api/site/topics/scoped-topic" && u.searchParams.get("page") === "2";
+  }));
+});
+
+test("daily archive stays available in desktop and phone navigation with empty or short histories", async () => {
+  try {
+    for (const count of [0, 2]) {
+      reportIndexLimit = count;
+      const res = await fetch(origin + "/daily/medical");
+      assert.equal(res.status, 200);
+      const $ = load(await res.text());
+      const phone = $("nav[aria-label='报告领域']").parents(".lg\\:hidden").first();
+      assert.equal(phone.find("a[href='/daily/medical/archive']").length, 1);
+      const desktop = $("nav[aria-label='报告领域']").closest("aside");
+      assert.equal(desktop.find("a[href='/daily/medical/archive']").length, 1);
+      for (const nav of $("nav[aria-label='报告领域']").toArray()) {
+        assert.ok($(nav).find("a[href='/daily']").length > 0);
+        assert.ok($(nav).find("a[href='/daily/policy']").length > 0);
+        assert.equal($(nav).find("a[href*='2026-09']").length, 0);
+      }
+    }
+  } finally {
+    reportIndexLimit = null;
   }
 });

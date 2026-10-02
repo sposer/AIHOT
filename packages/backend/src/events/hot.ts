@@ -95,7 +95,8 @@ export async function computeHotRanking(at = new Date()): Promise<{ id: number; 
 
   const entries: HotEntry[] = [];
   for (const r of rows) {
-    if (entries.length >= 10) break;
+    // decision: retain all globally qualified candidates; not truncate the snapshot to ten because
+    // a domain's Top 10 can start beyond the overview's Top 10. Public reads filter members before the cap.
     const reports = await sql<{ id: string; url: string; title: string; source_name: string; first_party: boolean; selected: boolean; score: number | null; at: Date }[]>`
       SELECT DISTINCT ON (p.article_id) p.article_id AS id, p.url, p.title, s.name AS source_name, p.first_party, p.selected, p.score,
              coalesce(p.published_at, p.discovered_at) AS at
@@ -158,7 +159,7 @@ export async function computeHotRanking(at = new Date()): Promise<{ id: number; 
     RETURNING id`;
   // Keep a bounded history of rankings.
   await sql`DELETE FROM hot_rankings WHERE computed_at < now() - interval '30 days'`;
-  return { id: row!.id, entries: entries.length };
+  return { id: row!.id, entries: Math.min(entries.length, 10) };
 }
 
 /**

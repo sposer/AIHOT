@@ -1,10 +1,11 @@
-import type { FeedItemSummary } from "@aihot/contracts/site";
+import type { TopicPage, TopicSummary } from "@aihot/contracts/site";
+import type { DomainKey } from "@aihot/contracts/taxonomy";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REPO_ROOT } from "../config.ts";
 import { sql } from "../db.ts";
-import { cached } from "../lib/cache.ts";
-import { ITEM_COLUMNS, ITEM_FROM, selectedCondition, toFeedItemSummary, type ItemRow } from "./items.ts";
+import { cached, type Cached } from "../lib/cache.ts";
+import { ITEM_COLUMNS, ITEM_FROM, domainCondition, selectedCondition, toFeedItemSummary, type ItemRow } from "./items.ts";
 
 export interface TopicRow {
   slug: string;
@@ -23,7 +24,15 @@ const topicsCache = cached(
   { freshMs: 60_000, maxStaleMs: 10 * 60_000 },
 );
 // Counts may lag by about a minute, like the public directory cache; item reads always check visibility.
-const countsCache = cached(queryTopicCounts, { freshMs: 60_000, maxStaleMs: 10 * 60_000 });
+const countsCaches = new Map<DomainKey | null, Cached<TopicCount[]>>();
+function countsCache(domain: DomainKey | null) {
+  let cache = countsCaches.get(domain);
+  if (!cache) {
+    cache = cached(() => queryTopicCounts(domain), { freshMs: 60_000, maxStaleMs: 10 * 60_000 });
+    countsCaches.set(domain, cache);
+  }
+  return cache;
+}
 
 /**
  * The topics (stable slugs, names, definitions, related topics) come from the industry pack
@@ -42,7 +51,7 @@ export async function seedTopics(): Promise<number> {
         tags = EXCLUDED.tags, definition = EXCLUDED.definition, related = EXCLUDED.related, position = EXCLUDED.position`;
   }
   topicsCache.clear();
-  countsCache.clear();
+  for (const cache of countsCaches.values()) cache.clear();
   return data.topics.length;
 }
 
@@ -70,18 +79,18 @@ export async function loadTopicTags(slug: string): Promise<string[] | null> {
 export const TOPIC_PAGE_SIZE = 20;
 
 /** Topic pages exist for every topic; only topics with enough content are listed and indexed. */
-export function topicPageCounts(): Promise<TopicCount[]> {
-  return countsCache.get();
+export function topicPageCounts(domain: DomainKey | null = null): Promise<TopicCount[]> {
+  return countsCache(domain).get();
 }
 
 /**
  * One pass over the selected set (a few thousand rows from its partial index) instead of one
  * scan per topic; a topic counts an item when their tags overlap, as `p.tags && match` does.
  */
-async function queryTopicCounts(): Promise<TopicCount[]> {
+async function queryTopicCounts(domain: DomainKey | null): Promise<TopicCount[]> {
   const [topics, items] = await Promise.all([
     sql<Array<Pick<TopicRow, "slug" | "entity_id" | "tags">>>`SELECT slug, entity_id, tags FROM topics ORDER BY position`,
-    sql<{ tags: string[]; timeline_at: Date }[]>`SELECT p.tags, p.timeline_at FROM publications p WHERE p.visibility = 'public' AND p.selected`,
+    sql<{ tags: string[]; timeline_at: Date }[]>`SELECT p.tags, p.timeline_at FROM publications p WHERE ${selectedCondition(new Date())} ${domainCondition(domain)}`,
   ]);
   const recentFrom = Date.now() - 30 * 86400_000;
   return topics.map((t) => {
@@ -99,37 +108,19 @@ async function queryTopicCounts(): Promise<TopicCount[]> {
   });
 }
 
-export interface TopicSummary {
-  slug: string;
-  name: string;
-  group: "company" | "field" | "genre";
-  definition: string;
-  total: number;
-  recent: number;
-  indexable: boolean;
-  latestAt: string | null;
-}
-
-export async function listTopicSummaries(): Promise<TopicSummary[]> {
+export async function listTopicSummaries(domain: DomainKey | null = null): Promise<TopicSummary[]> {
   const topics = await listTopics();
-  const counts = new Map((await topicPageCounts()).map((c) => [c.slug, c]));
+  const counts = new Map((await topicPageCounts(domain)).map((c) => [c.slug, c]));
   return topics.map((t) => {
     const c = counts.get(t.slug);
     return { slug: t.slug, name: t.name, group: t.grp, definition: t.definition, total: c?.total ?? 0, recent: c?.recent ?? 0, indexable: c?.indexable ?? false, latestAt: c?.latest?.toISOString() ?? null };
   });
 }
 
-export interface TopicPage {
-  topic: TopicSummary & { related: Array<{ slug: string; name: string }> };
-  items: FeedItemSummary[];
-  page: number;
-  pageCount: number;
-}
-
-export async function loadTopicPage(slug: string, page: number, now = new Date()): Promise<TopicPage | null> {
+export async function loadTopicPage(slug: string, page: number, now = new Date(), domain: DomainKey | null = null): Promise<TopicPage | null> {
   const row = await loadTopic(slug);
   if (!row || page < 1) return null;
-  const topics = await listTopicSummaries();
+  const topics = await listTopicSummaries(domain);
   const topic = topics.find((t) => t.slug === slug);
   if (!topic) return null;
   const pageCount = Math.max(1, Math.ceil(topic.total / TOPIC_PAGE_SIZE));
@@ -138,7 +129,7 @@ export async function loadTopicPage(slug: string, page: number, now = new Date()
   const rows = await sql<ItemRow[]>`
     WITH page AS (
       SELECT p.article_id FROM publications p
-      WHERE ${selectedCondition(now)} AND p.tags && ${topicMatchTags(row)}::text[]
+      WHERE ${selectedCondition(now)} ${domainCondition(domain)} AND p.tags && ${topicMatchTags(row)}::text[]
       ORDER BY p.timeline_at DESC, p.article_id DESC
       LIMIT ${TOPIC_PAGE_SIZE} OFFSET ${(page - 1) * TOPIC_PAGE_SIZE})
     SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN (SELECT article_id FROM page)

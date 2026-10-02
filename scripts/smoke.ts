@@ -3,11 +3,19 @@
 //   node scripts/smoke.ts [--base http://localhost:3000]
 import { SITE } from "@aihot/industry/site";
 import { FEATURES } from "@aihot/industry/features";
+import { DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
+import { REPORT_SCOPES, type ReportKind } from "@aihot/contracts/site";
+import { reportArchivePath, reportPath } from "@aihot/contracts/http-policy";
 
 const at = process.argv.indexOf("--base");
 const base = (at > 0 ? process.argv[at + 1] : process.env.SITE_URL) ?? "http://localhost:3000";
 
-const PAGES = ["/", "/all", "/hot", "/daily", "/daily/archive", "/topics", "/starred", "/agent", "/about", "/changelog", "/feedback", "/terms", "/privacy", "/more", "/admin/login"];
+const PAGES = ["/", "/all", "/hot", "/topics", "/starred", "/agent", "/about", "/changelog", "/feedback", "/terms", "/privacy", "/more", "/admin/login"];
+for (const domain of DOMAIN_KEYS) PAGES.push(`/all/${domain}`, `/hot?domain=${domain}`, `/topics?domain=${domain}`);
+for (const scope of REPORT_SCOPES) {
+  for (const kind of ["daily", "weekly", "monthly"] as ReportKind[]) PAGES.push(reportPath(kind, scope));
+  PAGES.push(reportArchivePath(scope));
+}
 const MACHINE: Array<[path: string, type: RegExp]> = [
   ["/api/health", /json/],
   ["/api/v1/items", /json/],
@@ -24,6 +32,10 @@ const MACHINE: Array<[path: string, type: RegExp]> = [
   ["/icon.png", /image\/png/],
   ["/favicon.ico", /icon/],
 ];
+for (const domain of DOMAIN_KEYS) {
+  for (const path of ["/api/v1/items", "/api/v1/hot-topics"]) MACHINE.push([`${path}?domain=${domain}`, /json/]);
+  for (const path of ["/feed.xml", "/feed/all.xml", "/feed/daily.xml"]) MACHINE.push([`${path}?domain=${domain}`, /xml/]);
+}
 // The leaderboard pages answer 503 until the first round is published (a fresh site computes it when
 // the worker starts; with collection off there is nothing to compute).
 const LEADERBOARD = FEATURES.leaderboard ? ["/leaderboard", "/leaderboard/rules", "/leaderboard/sources"] : [];

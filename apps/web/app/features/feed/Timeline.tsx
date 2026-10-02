@@ -25,6 +25,7 @@ interface ListState {
 
 function filterQuery(f: TimelineFilters, extra: Record<string, string | number | null | undefined> = {}) {
   const sp = new URLSearchParams();
+  if (f.domain) sp.set("domain", f.domain);
   if (f.channel !== "all") sp.set("channel", f.channel);
   if (f.category) sp.set("category", f.category);
   if (f.tag) sp.set("tag", f.tag);

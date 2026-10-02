@@ -187,6 +187,13 @@ test("guards: a company the input does not name is not written in; long summarie
   // The identity lexicon: a Chinese rendering of a company the input names in English is no invention.
   const alibaba = { title: "Alibaba ships a new coding model", text: "Alibaba released a coding model with pricing details.", sourceKind: "rss" };
   assert.equal(enforceIdentity(alibaba, { titleZh: "阿里巴巴发布编程模型", summaryZh: "阿里巴巴发布了编程模型并公布价格。" }).identityGuard.outcome, "pass");
+  const judicial = { title: "发布审判指导", text: "发布了一项审判指导意见。", sourceKind: "web_list", documentUrl: "https://www.court.gov.cn/fabu/123.html" };
+  assert.equal(enforceIdentity(judicial, { titleZh: "最高人民法院发布审判指导", summaryZh: "发布了一项指导意见。" }).identityGuard.outcome, "pass");
+  assert.deepEqual(enforceIdentity(judicial, { titleZh: "国务院发布审判指导", summaryZh: "发布了一项指导意见。" }).identityGuard.unsupportedTitleEntityIds, ["china-state-council"]);
+  const policy = { ...judicial, documentUrl: "https://www.gov.cn/zhengce/123.html" };
+  assert.equal(enforceIdentity(policy, { titleZh: "国务院发布政策", summaryZh: "发布了一项政策。" }).identityGuard.outcome, "pass");
+  const pronoun = { title: "Patients who received treatment", text: "A study of patients who received treatment.", sourceKind: "rss" };
+  assert.deepEqual(enforceIdentity(pronoun, { titleZh: "WHO 发布研究", summaryZh: "公布了一项研究。" }).identityGuard.unsupportedTitleEntityIds, ["who"]);
   const long = "第一句交代了谁做了什么以及关键结果，这一句本身已经足够说明核心事件的来龙去脉。".repeat(3) + "第二句补充数字。".repeat(20);
   assert.ok(compactAnswerFirstSummary(long).length <= 190);
   assert.deepEqual(parseTranslateOutput("title_zh: 标题\nsummary_zh: 第一句。\n第二句。"), { titleZh: "标题", summaryZh: "第一句。\n第二句。", bodyZh: "" });

@@ -36,7 +36,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const q = f?.q;
   const page = loaderData?.data.page ?? 1;
   return pageMeta({
-    title: q ? `搜索：${q}` : f?.domain ? `${DOMAIN_LABELS[f.domain]}动态` : "动态",
+    title: q ? `搜索：${q}` : "动态",
     description: `${SITE.name} 收录的${f?.domain ? DOMAIN_LABELS[f.domain] : "各领域"}动态，可按类别与标签筛选，支持中英文搜索。`,
     path: listPath(loaderData?.base ?? "/all", { channel: f && f.channel !== "all" ? f.channel : null, category: f?.category, tag: f?.tag, q, tab: f?.tab === "relevance" ? "relevance" : null, page: page > 1 ? page : null }),
     noindex: !!q,
@@ -64,7 +64,7 @@ export default function AllPage() {
   const navigation = useNavigation();
   const f = data.filters;
   const busy = navigation.state === "loading" && navigation.location?.pathname === base;
-  const pageTitle = f.domain ? `${DOMAIN_LABELS[f.domain]}动态` : "动态";
+  const pageTitle = "动态";
   const keep = { channel: f.channel === "all" ? null : f.channel, category: f.category, tag: f.tag };
   const searchTabHref = (tab: "time" | "relevance") => {
     const sp = new URLSearchParams(params);

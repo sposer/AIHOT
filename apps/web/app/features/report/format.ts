@@ -30,8 +30,8 @@ export function scopeLabel(scope: ReportScope): string {
   return scope === "all" ? "概览" : DOMAIN_LABELS[scope];
 }
 
-export function reportTitle(kind: ReportKind, scope: ReportScope): string {
-  return withSubject(KIND_LABEL[kind], scope === "all" ? "" : DOMAIN_LABELS[scope]);
+export function reportTitle(kind: ReportKind): string {
+  return KIND_LABEL[kind];
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");

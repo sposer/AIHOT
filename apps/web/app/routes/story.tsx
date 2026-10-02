@@ -1,4 +1,4 @@
-import { SITE, withSubject } from "@aihot/industry/site";
+import { SITE } from "@aihot/industry/site";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/story";
@@ -40,7 +40,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
     path: storyPath,
     image: listPath(`/og/stories/${s.publicId}.png`, { domain }),
     type: "article",
-    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "热点榜", path: listPath("/hot", { domain }) }, { name: s.title, path: storyPath }]),
+    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "热点", path: listPath("/hot", { domain }) }, { name: s.title, path: storyPath }]),
   });
 }
 
@@ -204,7 +204,7 @@ export default function StoryPage() {
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-10">
       <nav aria-label="位置" className="flex items-center gap-2.5 pb-4 pt-5 text-[12px] text-ink-4 lg:pb-5 lg:pt-4">
         <Link to={listPath("/hot", { domain })} className="inline-flex items-center gap-1.5 transition-colors hover:text-ink">
-          <IconArrowLeft size={15} /> 热点榜
+          <IconArrowLeft size={15} /> 热点
         </Link>
         <span className="h-3 w-px bg-line-strong" aria-hidden="true" />
         <span>事件详情</span>
@@ -394,7 +394,7 @@ export default function StoryPage() {
                   <>
                     <span className="mx-1">·</span>
                     <Link to={listPath("/hot", { domain })} className="text-accent hover:underline">
-                      热点榜第 {story.whyHot.rank} 名
+                      热点第 {story.whyHot.rank} 名
                     </Link>
                   </>
                 )}

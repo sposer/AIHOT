@@ -90,7 +90,7 @@ function McpTab({ base }: { base: string }) {
         <Bullets items={[
           <><Mono>{T.latest}</Mono>：过去 24 小时或最近 7 天的精选／全部资讯</>,
           <><Mono>{T.search}</Mono>：搜索最近 7 天的公司、产品、人物或话题</>,
-          <><Mono>{T.hot}</Mono>：当前热点榜与事件排名</>,
+          <><Mono>{T.hot}</Mono>：当前热点与事件排名</>,
           <><Mono>{T.story}</Mono>：一个热点事件的时间线与持续更新的综述</>,
           <><Mono>{T.daily}</Mono>：最新或指定日期的{withSubject("日报")}</>,
         ]} />
@@ -158,7 +158,7 @@ function ApiTab({ base }: { base: string }) {
           ["/api/v1/codex-resets", "Codex 重置与发卡的完整历史"],
         ] as Array<[string, string]>)
       : []),
-    ["/api/v1/hot-topics", "当前热点榜与事件排名"],
+    ["/api/v1/hot-topics", "当前热点与事件排名"],
     ["/api/v1/stories/{publicId}", "事件详情：报道时间线、综述与关联事件"],
     ["/api/v1/dailies", `${withSubject("日报")}日期索引`],
     ["/api/v1/dailies/latest", `最新${withSubject("日报")}`],

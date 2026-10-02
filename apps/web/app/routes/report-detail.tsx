@@ -32,7 +32,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
   if (!loaderData) return [{ title: titled("报告不存在") }, { name: "robots", content: "noindex" }];
   const r = loaderData.report;
   return pageMeta({
-    title: `${reportTitle(r.kind, r.scope)} ${r.key}`,
+    title: `${reportTitle(r.kind)} ${r.key}`,
     description: r.lead?.leadParagraph ?? r.overview?.slice(0, 150) ?? `${SITE.name} ${r.key} 的${withSubject(KIND_LABEL[r.kind])}。`,
     path: reportPath(r.kind, r.scope, r.key),
     image: `/og/reports/${r.kind}/${r.scope}/${r.key}.png`,

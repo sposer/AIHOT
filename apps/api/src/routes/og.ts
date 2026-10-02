@@ -2,7 +2,7 @@
 // gets a card; anything else is a real 404.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isReportScope } from "@aihot/contracts/site";
-import { CATEGORY_LABELS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
+import { CATEGORY_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
 import { beijingDate } from "@aihot/contracts/time";
 import { loadItemShare } from "@aihot/backend/publication/og";
 import { loadReport, type ReportKind } from "@aihot/backend/publication/reports";
@@ -18,7 +18,7 @@ const S = SITE.subject;
 const PAGES: Record<string, OgCard> = {
   site: { kicker: SITE.name, title: SITE.tagline, subtitle: SITE.description },
   all: { kicker: `全部${withSubject("动态")}`, title: "所有信源的最新动态，一站看完", subtitle: "按时间汇总各信源的最新动态，可按类别与标签筛选。" },
-  hot: { kicker: "热点榜", title: `过去 48 小时，大家在讨论什么`, subtitle: "热度指数、趋势与组成热度的公开来源。", accent: "hot" },
+  hot: { kicker: "热点", title: `过去 48 小时，大家在讨论什么`, subtitle: "热度指数、趋势与组成热度的公开来源。", accent: "hot" },
   daily: { kicker: withSubject("日报"), title: `每天 8 点，一份读得完的${withSubject("日报")}`, subtitle: `前一天值得关注的${S}动态。` },
   weekly: { kicker: withSubject("周报"), title: "一周大事，一次看清", subtitle: "本周的主线、重要发布与值得回看的讨论。" },
   monthly: { kicker: withSubject("月报"), title: "一个月的变化", subtitle: "月度主线与关键事件回顾。" },
@@ -106,7 +106,7 @@ export function registerOg(app: FastifyInstance) {
     const r = await loadReport(kind as ReportKind, scope, file.slice(0, -4));
     if (!r) return notFound(reply);
     return send(req, reply, {
-      kicker: `${withSubject(REPORT_NAMES[r.kind], r.scope === "all" ? "" : DOMAIN_LABELS[r.scope])} · ${r.key}`,
+      kicker: `${REPORT_NAMES[r.kind]} · ${r.key}`,
       title: r.lead?.title ?? r.title,
       subtitle: r.lead?.leadParagraph ?? r.overview,
       meta: `${r.stories.length} 条核心新闻 · 约 ${r.readingMinutes} 分钟读完`,

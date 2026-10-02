@@ -42,7 +42,7 @@ export function llmsTxt(opts: { reports: ReadonlyArray<{ kind: ReportKind; scope
   for (const scope of dailyScopes) lines.push(`- [${title("daily", scope)} RSS](${u(`/feed/daily.xml${query(scope)}`)}): 每天 08:00 北京时间发布，保留最近 30 期`);
   lines.push(`- [分类 RSS](${u(`/feed/category/${CATEGORY_KEYS[0]}.xml`)}): 按分类订阅精选，slug 支持 ${CATEGORY_KEYS.join(" / ")}`);
   lines.push(`- [公开 API v1 · 最近资讯](${u("/api/v1/items")}): JSON，支持 mode=selected/all、window=24h/7d、by=timeline/published、domain、category、q、limit 与 cursor`);
-  lines.push(`- [公开 API v1 · 当前热点](${u("/api/v1/hot-topics")}): 热点榜 Top 10；支持 domain；每条含从 1 开始的 rank 和当前公开报道派生的 domains，links.story 指向同一全局事件页`);
+  lines.push(`- [公开 API v1 · 当前热点](${u("/api/v1/hot-topics")}): 热点 Top 10；支持 domain；每条含从 1 开始的 rank 和当前公开报道派生的 domains，links.story 指向同一全局事件页`);
   lines.push(`- [公开 API v1 · 事件详情](${u("/api/v1/stories/{publicId}")}): 事件报道时间线与随演化更新的综述；publicId 只来自 hot-topics 的 links.story，不要猜测`);
   if (FEATURES.codexResetMonitor) {
     lines.push(`- [公开 API v1 · Codex 重置监控（轮询用）](${u("/api/v1/codex-resets/recent")}): 最近 7 天与尚未落地的预告，结构与完整快照相同；建议每 5 分钟带 If-None-Match 轮询`);
@@ -60,7 +60,7 @@ export function llmsTxt(opts: { reports: ReadonlyArray<{ kind: ReportKind; scope
   lines.push(`- [隐私说明](${u("/privacy")})`, "");
   lines.push("## 网站主要页面", "");
   lines.push(`- [首页 · 精选](${u("/")}): 每日精选动态`);
-  lines.push(`- [热点榜](${u("/hot")}): 过去 48 小时内被多个独立信源共同讨论的事件`);
+  lines.push(`- [热点](${u("/hot")}): 过去 48 小时内被多个独立信源共同讨论的事件`);
   lines.push(`- [动态](${u("/all")}): 各领域公开资讯，按类别筛选`);
   for (const domain of DOMAIN_KEYS) lines.push(`- [${DOMAIN_LABELS[domain]}动态](${u(`/all/${domain}`)}): 当前领域的公开资讯`);
   for (const scope of REPORT_SCOPES) {

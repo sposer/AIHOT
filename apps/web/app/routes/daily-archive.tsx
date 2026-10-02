@@ -17,7 +17,7 @@ export async function loader({ request, params }: { request: Request; params: { 
 
 export function meta({ loaderData }: { loaderData: Awaited<ReturnType<typeof loader>> | undefined }) {
   const scope = loaderData?.scope ?? "all";
-  return pageMeta({ title: `${reportTitle("daily", scope)} · 历史存档`, description: `${SITE.name} 历史日报，按日期归档。`, path: reportArchivePath(scope), image: "/og/pages/daily.png" });
+  return pageMeta({ title: `${reportTitle("daily")} · 历史存档`, description: `${SITE.name} 历史日报，按日期归档。`, path: reportArchivePath(scope), image: "/og/pages/daily.png" });
 }
 
 export function headers() {
@@ -32,7 +32,7 @@ export default function DailyArchive() {
       <div className="@container">
         <header className="pt-5 lg:pt-0">
           <div className="flex items-center justify-between gap-4 text-[12px] text-ink-4">
-            <span>{SITE.name} · {reportTitle("daily", scope)}</span>
+            <span>{SITE.name} · {reportTitle("daily")}</span>
             <span>
               共 <span className="num">{index.length}</span> 期
             </span>
@@ -55,7 +55,7 @@ export default function DailyArchive() {
                     <span className="mt-1.5 text-[10.5px] leading-none text-ink-4">{beijingWeekday(e.key).replace("星期", "周")}</span>
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[15px] font-bold leading-[1.55] text-ink transition-colors group-hover:text-accent">{e.title ?? `${reportTitle("daily", scope)} ${e.key}`}</span>
+                    <span className="block text-[15px] font-bold leading-[1.55] text-ink transition-colors group-hover:text-accent">{e.title ?? `${reportTitle("daily")} ${e.key}`}</span>
                     <span className="mt-1 block text-[12px] text-ink-4">
                       <span className="num">{e.count}</span> 件大事
                     </span>

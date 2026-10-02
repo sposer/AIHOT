@@ -21,7 +21,7 @@ export function meta({ loaderData, location }: Route.MetaArgs) {
   const kind = loaderData?.kind ?? "daily";
   const report = loaderData?.report;
   return pageMeta({
-    title: reportTitle(kind, loaderData?.scope ?? "all"),
+    title: reportTitle(kind),
     description: kind === "daily" ? `${SITE.name} 每天 08:00（北京时间）发布的${withSubject("日报")}。` : kind === "weekly" ? "每周综合回顾。" : "每月盘点。",
     path: location.pathname,
     image: report ? `/og/reports/${report.kind}/${report.scope}/${report.key}.png` : `/og/pages/${kind}.png`,
@@ -36,7 +36,7 @@ export default function ReportLatestPage() {
   const { kind, scope, report, index, today } = useLoaderData<typeof loader>();
   return (
     <ReportLayout kind={kind} scope={scope} index={index} current={report?.key ?? null} today={today}>
-      {report ? <ReportPaper report={report} index={index} /> : <EmptyState title={`还没有发布${reportTitle(kind, scope)}`}>第一期发布后会出现在这里。</EmptyState>}
+      {report ? <ReportPaper report={report} index={index} /> : <EmptyState title={`还没有发布${reportTitle(kind)}`}>第一期发布后会出现在这里。</EmptyState>}
     </ReportLayout>
   );
 }

@@ -279,7 +279,17 @@ test("domain pages and editions retain their scope through SSR, navigation and c
     const res = await fetch(origin + pathname);
     assert.equal(res.status, 200, pathname);
     const html = await res.text();
+    const page = load(html);
     assert.equal(new URL(canonicalOf(html)!).pathname, pathname);
+    const expectedTitle = new Map([
+      ["/all/medical", "动态 · MyHOT"],
+      ["/daily/medical", "日报 · MyHOT"],
+      ["/daily/medical/2026-09-28", "日报 2026-09-28 · MyHOT"],
+      ["/daily/medical/archive", "日报 · 历史存档 · MyHOT"],
+    ]).get(pathname);
+    if (expectedTitle) assert.equal(page("title").text(), expectedTitle);
+    if (pathname === "/all/medical") assert.equal(page("h1").first().text().trim(), "动态");
+    if (pathname === "/daily/medical") assert.match(page("h1").first().text().replace(/\s+/g, " ").trim(), /^日报 · /);
     if (pathname.startsWith("/daily/medical")) {
       assert.match(html, /href="\/daily\/medical\/2026-09-28"/);
       assert.match(html, /href="\/weekly\/medical"/);
@@ -296,16 +306,17 @@ test("domain pages and editions retain their scope through SSR, navigation and c
     if (pathname.includes("medical")) assert.ok(body.includes("medical"));
   }
   for (const [kind, label] of [["daily", "日报"], ["weekly", "周报"], ["monthly", "月报"]] as const) {
-    for (const [scope, subject] of [["medical", "医疗"], ["all", ""]] as const) {
+    for (const scope of ["medical", "all"] as const) {
       const res = await fetch(`${origin}/${kind}/${scope}/${reportKeys[kind][2]}`);
       assert.equal(res.status, 200);
       const $ = load(await res.text());
+      assert.equal($("title").text(), `${label} ${reportKeys[kind][2]} · MyHOT`);
       const neighbours = $(`nav[aria-label="${kind === "daily" ? "前后日报" : "前后各期"}"]`);
       for (const key of [reportKeys[kind][1]!, reportKeys[kind][3]!]) {
         const selector = `a[href="/${kind}/${scope}/${key}"]`;
-        assert.equal(neighbours.find(selector).children("span").last().text(), `${subject}${label} · ${key}`);
-        assert.equal($("aside nav").find(selector).children("span").last().text(), `${subject}${label} ${key}`);
-        if (kind !== "daily") assert.equal($("#report-history").find(selector).children("span").last().text(), `MyHOT ${subject}${label} · ${key}`);
+        assert.equal(neighbours.find(selector).children("span").last().text(), `${label} · ${key}`);
+        assert.equal($("aside nav").find(selector).children("span").last().text(), `${label} ${key}`);
+        if (kind !== "daily") assert.equal($("#report-history").find(selector).children("span").last().text(), `MyHOT ${label} · ${key}`);
       }
     }
   }
@@ -331,6 +342,8 @@ test("domain navigation preserves query context and forwards hot, story and topi
     pages.push(load(await res.text()));
   }
   const [all, hot, story, topics, topic] = pages;
+  assert.equal(hot!("title").text(), "热点 · MyHOT");
+  assert.equal(hot!("h1").first().text().trim(), "热点");
   const switchUrl = new URL(all!("nav[aria-label='动态领域'] a[href^='/all/legal']").first().attr("href")!, origin);
   assert.equal(switchUrl.pathname, "/all/legal");
   for (const [key, value] of Object.entries({ q: "clinical", category: "paper", channel: "news", tag: "clinical" })) assert.equal(switchUrl.searchParams.get(key), value);

@@ -26,8 +26,8 @@
 
 ## 2. 分类、标签和主题：`industry/taxonomy.ts`、`industry/topics.json`
 
-- `DOMAINS`：领域名称和稳定 key 的 owner；文章可以涉及多个领域。`all` 只表示概览或报告 scope，不是文章领域。领域 key 不在这份指南重复列举，以 [`taxonomy.ts`](../industry/taxonomy.ts) 为准。
-- `CATEGORIES`：类别与领域是独立维度。首页和“全部动态”可按类别筛选；`key` 会出现在网址和接口里，上线后不要改；`label` 是显示名；`section` 是日报里的分节；`guide` 告诉模型怎么归类。
+- `DOMAINS`：领域名称和稳定 key 的 owner；文章可以涉及多个领域。`all` 只表示概览或报告 scope，不是文章领域。每个领域的 `columns` 配置精选与动态的子栏目，`key` 标识展示入口，`label` 是显示名，`filters` 组合现有 `category`、`tag`、`channel` 筛选。概览和 AI 复用 `DEFAULT_COLUMNS`；领域及子栏目名单以 [`taxonomy.ts`](../industry/taxonomy.ts) 为准。
+- `CATEGORIES`：类别与领域是独立维度。`key` 会出现在网址和接口里，上线后不要改；`label` 用于卡片与默认子栏目；`section` 是日报里的分节；`guide` 告诉模型怎么归类。改变子栏目名称或顺序不需要重分析文章、重建数据或修改报告分节。
 - `CATEGORY_TAGS`、`TOPIC_TAGS`、`ENTITY_TAGS`：模型打标签时只能从这里选。第一个标签必须是“分类标签”。
 - `ENTITIES`：行业里的主要公司或机构，用于“公司”类主题页。`IDENTITY_LEXICON`、`PUBLISHER_DOMAINS` 用来防止模型在标题摘要里写进原文没提到的公司，别的行业没有这个需要可以清空。
 - `ITEM_TYPES`：内容类型，和评分提示词里的权重表对应，改了要一起改提示词。

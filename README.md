@@ -135,7 +135,7 @@ docker compose up -d --build
 | 文件 | 改什么 |
 |---|---|
 | `site.ts` | 站名、行业词、首页文案、关于页 |
-| `taxonomy.ts`、`topics.json` | 领域与分类词表、标签、主题；文章领域和类别是独立维度 |
+| `taxonomy.ts`、`topics.json` | 领域、子栏目筛选预设、分类词表、标签、主题；文章领域和类别是独立维度 |
 | `sources.json` | 首次启动时导入的信源 |
 | `prompts/` | 精选标准和写作要求。**你的行业 KnowHow，就写在这里** |
 | `selection.ts` | 入选门槛 |

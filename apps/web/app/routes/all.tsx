@@ -5,7 +5,7 @@ import type { PoolResponse } from "@aihot/contracts/site";
 import { DOMAIN_LABELS, isCategoryKey, isChannelKey, isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString } from "../lib/api.server";
 import { listPath, pageMeta } from "../lib/seo";
-import { CategoryTabs, DomainTabs, SearchField, hrefWith } from "../features/feed/Filters";
+import { ColumnTabs, DomainTabs, SearchField, hrefWith } from "../features/feed/Filters";
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState } from "../components/ui/Page";
@@ -73,7 +73,7 @@ export default function AllPage() {
     else sp.delete("tab");
     return `${base}?${sp}`;
   };
-  const title = f.q ? `搜索“${f.q}”` : f.tag ? `#${f.tag}` : null;
+  const title = f.q ? `搜索“${f.q}”` : null;
   const updated = new Date(data.freshness).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Shanghai" });
 
   return (
@@ -89,7 +89,7 @@ export default function AllPage() {
           className="mt-4"
         />
         <div className="mb-5 mt-3 flex items-center justify-between gap-4">
-          <CategoryTabs base={base} category={f.category} channel={f.channel} layoutId="all-cat-desk" className="min-w-0" />
+          <ColumnTabs base={base} filters={f} layoutId="all-cat-desk" className="min-w-0" />
           <SearchField action={base} variant="track" defaultValue={f.q ?? ""} keep={keep} />
         </div>
       </div>
@@ -116,7 +116,7 @@ export default function AllPage() {
           <SearchField action={base} variant="bar" defaultValue={f.q ?? ""} keep={keep} autoFocus={params.get("search") === "1"} />
         </div>
         <div className="-mx-4 mt-3 border-b border-line-soft px-4 pb-3">
-          <CategoryTabs base={base} category={f.category} channel={f.channel} layoutId="all-cat-mobile" size="sm" className="min-w-0" />
+          <ColumnTabs base={base} filters={f} layoutId="all-cat-mobile" size="sm" className="min-w-0" />
         </div>
       </div>
 

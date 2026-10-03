@@ -35,7 +35,7 @@ const api = createServer((req, res) => {
     return metaDelayMs ? setTimeout(respond, metaDelayMs) : respond();
   }
   if (url.pathname === "/api/site/timeline") {
-    const filters = { channel: "all", category: url.searchParams.get("category"), tag: null, topic: null };
+    const filters = { domain: url.searchParams.get("domain"), channel: url.searchParams.get("channel") ?? "all", category: url.searchParams.get("category"), tag: url.searchParams.get("tag"), topic: null };
     res.setHeader("X-Accel-Expires", `@${deadline}`);
     res.setHeader("Cache-Control", "public, max-age=30, s-maxage=30");
     return res.end(JSON.stringify({ filters, cards: [], nextCursor: null, refreshAt, dayCounts: [], hot: null, generatedAt: "2026-09-28T00:00:00Z" }));
@@ -272,6 +272,49 @@ test("a visitor cannot name its own address to the api without a trusted proxy i
   assert.deepEqual(await res.json(), { forwarded: "127.0.0.1", real: "127.0.0.1" });
 });
 
+
+test("domain columns submit existing filters on selected and dynamic feeds", async () => {
+  apiUrls.length = 0;
+  for (const path of ["/?domain=medical&category=paper&tag=%E4%B8%B4%E5%BA%8A%E7%A0%94%E7%A9%B6&channel=firstParty", "/all/medical?category=paper&tag=%E4%B8%B4%E5%BA%8A%E7%A0%94%E7%A9%B6&channel=firstParty&q=trial&page=2"]) {
+    const res = await fetch(origin + path);
+    assert.equal(res.status, 200);
+    const $ = load(await res.text());
+    const links = $("nav[aria-label='子栏目']").first().find("a").toArray().map((a) => new URL($(a).attr("href")!, origin));
+    const clinical = links.find((u) => u.searchParams.get("tag") === "临床研究")!;
+    assert(clinical);
+    assert.equal(clinical.searchParams.has("category"), false);
+    assert.equal(clinical.searchParams.has("channel"), false);
+    assert.equal(clinical.searchParams.has("page"), false);
+    assert.equal(links.some((u) => u.searchParams.get("category") === "ai-models"), false);
+    const firstParty = links.find((u) => u.searchParams.get("channel") === "firstParty")!;
+    assert.equal(firstParty.searchParams.has("tag"), false);
+    assert.equal(firstParty.searchParams.has("category"), false);
+    assert.equal($("nav[aria-label='子栏目'] a[aria-current='page']").length, 0);
+    const form = $("form[role='search']").first();
+    assert.equal(form.attr("action"), "/all/medical");
+    assert.equal(form.find("input[name='tag']").attr("value"), "临床研究");
+    assert.equal(form.find("input[name='channel']").attr("value"), "firstParty");
+    const selected = await fetch(clinical);
+    assert.equal(selected.status, 200);
+    const selectedPage = load(await selected.text());
+    const active = selectedPage("nav[aria-label='子栏目'] a[aria-current='page']").first();
+    assert.equal(new URL(active.attr("href")!, origin).searchParams.get("tag"), "临床研究");
+    assert.equal(selectedPage("h1").first().text().trim(), path.startsWith("/?") ? "精选" : "搜索“trial”");
+  }
+  for (const route of ["/api/site/timeline", "/api/site/pool"]) {
+    assert(apiUrls.some((value) => {
+      const u = new URL(value, "http://api.local");
+      return u.pathname === route && u.searchParams.get("domain") === "medical" && u.searchParams.get("category") === "paper" && u.searchParams.get("tag") === "临床研究" && u.searchParams.get("channel") === "firstParty";
+    }));
+  }
+  const redirect = await fetch(origin + "/?domain=medical&q=trial&tag=%E8%8D%AF%E5%93%81", { redirect: "manual" });
+  assert.equal(redirect.status, 302);
+  const location = new URL(redirect.headers.get("location")!, origin);
+  assert.equal(location.pathname, "/all/medical");
+  assert.equal(location.searchParams.get("q"), "trial");
+  assert.equal(location.searchParams.get("tag"), "药品");
+  assert.equal(location.searchParams.has("domain"), false);
+});
 
 test("domain pages and editions retain their scope through SSR, navigation and canonical URLs", async () => {
   const canonicalOf = (html: string) => html.match(/<link rel="canonical" href="([^"]+)"/)?.[1];

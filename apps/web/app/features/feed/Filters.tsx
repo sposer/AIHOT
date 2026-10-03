@@ -1,7 +1,8 @@
 // Feed filters: the channel and category row, and search.
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, useNavigation, useSearchParams } from "react-router";
-import { CATEGORY_KEYS, CATEGORY_LABELS, CHANNEL_LABELS, DOMAIN_KEYS, DOMAIN_LABELS, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
+import { feedColumns, DOMAIN_KEYS, DOMAIN_LABELS } from "@aihot/contracts/taxonomy";
+import type { TimelineFilters } from "@aihot/contracts/site";
 import type { ReportScope } from "@aihot/contracts/site";
 import { IconClose, IconSearch } from "../../components/icons";
 import { PillTabs } from "../../components/ui/Tabs";
@@ -56,20 +57,21 @@ export function DomainTabs({ scope, getHref, layoutId, label = "切换领域", o
   );
 }
 
-/**
- * The feed's one filter row (精选 and 全部动态 alike): 全部, 一手, then the categories. One choice at a
- * time: picking 一手 clears the category and picking a category clears 一手. Older 资讯 / X links
- * still filter; the row then shows 全部.
- */
-export function CategoryTabs({ base, category, channel = "all", layoutId, size = "md", className = "" }: { base: string; category: CategoryKey | null; channel?: ChannelKey; layoutId: string; size?: "md" | "sm"; className?: string }) {
+/** Display presets use the feed's existing filters; direct links may still combine those filters. */
+export function ColumnTabs({ base, filters, layoutId, size = "md", className = "" }: { base: string; filters: TimelineFilters; layoutId: string; size?: "md" | "sm"; className?: string }) {
   const [params] = useSearchParams();
-  const items = [
-    { key: "all", label: "全部", to: hrefWith(base, params, { category: null, channel: null }) },
-    { key: "firstParty", label: CHANNEL_LABELS.firstParty, to: hrefWith(base, params, { category: null, channel: "firstParty" }) },
-    ...CATEGORY_KEYS.map((k) => ({ key: k, label: CATEGORY_LABELS[k], to: hrefWith(base, params, { category: k, channel: null }) })),
-  ];
-  const active = channel === "firstParty" ? "firstParty" : (category ?? "all");
-  return <PillTabs items={items} active={active} layoutId={layoutId} label="筛选" size={size} className={className} />;
+  const columns = feedColumns(filters.domain ?? null);
+  const active = columns.find(({ filters: preset }) =>
+    (preset.category ?? null) === filters.category &&
+    (preset.tag ?? null) === filters.tag &&
+    (preset.channel ?? "all") === filters.channel,
+  )?.key ?? "";
+  const items = columns.map(({ key, label, filters: preset }) => ({
+    key,
+    label,
+    to: hrefWith(base, params, { category: preset.category ?? null, tag: preset.tag ?? null, channel: preset.channel ?? null }),
+  }));
+  return <PillTabs items={items} active={active} layoutId={layoutId} label="子栏目" size={size} className={className} />;
 }
 
 function useSlashFocus(ref: React.RefObject<HTMLInputElement | null>) {
@@ -170,9 +172,10 @@ export function SearchField({ action = "/all", defaultValue = "", keep = {}, var
 }
 
 /** Mobile home: the search icon at the end of the category row opens search on 全部动态. */
-export function SearchIconLink() {
+export function SearchIconLink({ base = "/all" }: { base?: string }) {
+  const [params] = useSearchParams();
   return (
-    <Link to="/all?search=1" aria-label="搜索" className="flex size-9 shrink-0 items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink">
+    <Link to={hrefWith(base, params, { domain: null, search: "1" })} aria-label="搜索" className="flex size-9 shrink-0 items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink">
       <IconSearch size={19} />
     </Link>
   );

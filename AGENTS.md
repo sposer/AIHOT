@@ -11,9 +11,10 @@
 
 ## 工程边界
 
+- 项目当前处于开发阶段，仓库内契约按当前支持状态一次性替换，生产发布仍须单独授权。改动须覆盖定义、生产者、消费者、生成产物、测试与文档；同步删除被替代的路由、别名、格式、转换和兜底，不因旧实现或旧测试保留第二条路径。兼容仅用于任务明确要求或已核实的仓库外独立消费者、持久化用户数据边界，并在该边界声明支持状态、迁移动作及移除条件。
 - Web 只通过 HTTP 读取 API；数据库、模型调用和密钥留在后端。所有公开出口共用 `packages/backend/src/publication/` 读取层。
 - 读者请求不触发模型调用；付费请求必须经过回执和预算熔断。未知回执的恢复归 `docs/architecture.md` 中的回执边界。
-- 开发和测试时保持 `COLLECT_ENABLED`、`MODEL_CALLS_ENABLED`、`FEISHU_CONTENT_PUSH_ENABLED`、`FEISHU_INTERNAL_ENABLED`、`INDEXNOW_SUBMIT_ENABLED` 关闭；测试不访问外部服务。
+- 开发和测试默认关闭 `COLLECT_ENABLED`、`MODEL_CALLS_ENABLED`、`FEISHU_CONTENT_PUSH_ENABLED`、`FEISHU_INTERNAL_ENABLED`、`INDEXNOW_SUBMIT_ENABLED`；测试不访问外部服务。需要验证模型链路的测试只在隔离测试运行器中开启 `MODEL_CALLS_ENABLED`，供应商连接指向本地 stub，不加载真实凭据，其余外部动作保持关闭。
 - 信源默认只公开摘要和原文链接；只有来源明确允许时才启用 `site_fulltext`。公开内容对管理员和访客一致，后台只允许管理员。
 - 数据库只走 [docs/deploy.md](docs/deploy.md#数据库初始化与迁移) 定义的基线和增量迁移边界。使用规则和隐私说明由站点运营者确认。
 

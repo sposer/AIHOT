@@ -17,7 +17,7 @@
 - `name`：站名。导航、标题、分享图、RSS、MCP、后台都用它。
 - `subject`：站点概览使用的行业词；当前多领域 MyHOT 留空。各领域页面的名称来自 `taxonomy.ts` 的 `DOMAINS`，改站点概览词不会改领域归属。
 - `homeTitle`、`description`、`tagline`：首页标题、一句话介绍、侧边栏小字。
-- `mcpPrefix`：MCP 工具名前缀，比如 `lawhot` 会得到 `lawhot_get_latest`。有人接入以后不要再改。
+- `mcpPrefix`：MCP 工具名前缀，比如 `lawhot` 会得到 `lawhot_get_latest`。
 - `crawlerName`：抓取信源时报的名字，别用别人的站名。
 - `ABOUT`：关于页的大标题、四个环节的说明、作者块（可选）、版权说明。
 - `icp`：中国大陆网站的备案号，填了就显示在页脚。
@@ -27,11 +27,11 @@
 ## 2. 分类、标签和主题：`industry/taxonomy.ts`、`industry/topics.json`
 
 - `DOMAINS`：领域名称和稳定 key 的 owner；文章可以涉及多个领域。`all` 只表示概览或报告 scope，不是文章领域。每个领域的 `columns` 配置精选与动态的子栏目，`key` 标识展示入口，`label` 是显示名，`filters` 组合现有 `category`、`tag`、`channel` 筛选。概览和 AI 复用 `DEFAULT_COLUMNS`；领域及子栏目名单以 [`taxonomy.ts`](../industry/taxonomy.ts) 为准。
-- `CATEGORIES`：类别与领域是独立维度。`key` 会出现在网址和接口里，上线后不要改；`label` 用于卡片与默认子栏目；`section` 是日报里的分节；`guide` 告诉模型怎么归类。改变子栏目名称或顺序不需要重分析文章、重建数据或修改报告分节。
+- `CATEGORIES`：类别与领域是独立维度。`key` 是网址和接口里的身份；`label` 用于卡片与默认子栏目；`section` 是日报里的分节；`guide` 告诉模型怎么归类。改变子栏目名称或顺序不需要重分析文章、重建数据或修改报告分节。
 - `CATEGORY_TAGS`、`TOPIC_TAGS`、`ENTITY_TAGS`：模型打标签时只能从这里选。第一个标签必须是“分类标签”。
 - `ENTITIES`：行业里的主要公司或机构，用于“公司”类主题页。`IDENTITY_LEXICON`、`PUBLISHER_DOMAINS` 用来防止模型在标题摘要里写进原文没提到的公司，别的行业没有这个需要可以清空。
 - `ITEM_TYPES`：内容类型，和评分提示词里的权重表对应，改了要一起改提示词。
-- `topics.json`：主题目录（`/topics`）。分三组：`company`（公司与机构）、`field`（方向）、`genre`（内容形态）。每个主题用 `tags` 或 `entityId` 决定收哪些内容。`slug` 上线后不要改。
+- `topics.json`：主题目录（`/topics`）。分三组：`company`（公司与机构）、`field`（方向）、`genre`（内容形态）。每个主题用 `tags` 或 `entityId` 决定收哪些内容。`slug` 是主题页路径的身份。
 
 改完主题后运行 `node --env-file=.env scripts/seed.ts`（Docker 里会在启动时自动运行），主题会更新进数据库。
 

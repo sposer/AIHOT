@@ -1,6 +1,7 @@
 // Public vocabularies shared by the website, the API and the worker. The categories themselves belong to
 // the industry pack (industry/taxonomy.ts); their keys are external identities (URLs, API, RSS).
-import { CATEGORIES, DOMAINS } from "@aihot/industry/taxonomy";
+import { CATEGORIES, CHANNEL_KEYS, DEFAULT_COLUMNS, DOMAINS } from "@aihot/industry/taxonomy";
+export { CHANNEL_KEYS, CHANNEL_LABELS } from "@aihot/industry/taxonomy";
 
 export type DomainKey = (typeof DOMAINS)[number]["key"];
 export const DOMAIN_KEYS = DOMAINS.map((d) => d.key) as unknown as readonly [DomainKey, ...DomainKey[]];
@@ -33,18 +34,21 @@ export function isCategoryKey(value: unknown): value is CategoryKey {
   return typeof value === "string" && (CATEGORY_KEYS as readonly string[]).includes(value);
 }
 
-export const CHANNEL_KEYS = ["all", "news", "x", "firstParty"] as const;
 export type ChannelKey = (typeof CHANNEL_KEYS)[number];
-
-export const CHANNEL_LABELS: Record<ChannelKey, string> = {
-  all: "全部",
-  news: "资讯",
-  x: "X",
-  firstParty: "一手",
-};
 
 export function isChannelKey(value: unknown): value is ChannelKey {
   return typeof value === "string" && (CHANNEL_KEYS as readonly string[]).includes(value);
+}
+
+/** Presentation presets reuse the site's existing filter dimensions. */
+export interface FeedColumn {
+  readonly key: string;
+  readonly label: string;
+  readonly filters: Readonly<{ category?: CategoryKey; tag?: string; channel?: ChannelKey }>;
+}
+
+export function feedColumns(scope: DomainKey | null): readonly FeedColumn[] {
+  return scope === null ? DEFAULT_COLUMNS : DOMAINS.find((domain) => domain.key === scope)!.columns;
 }
 
 export const LEADERBOARD_PUBLIC_BOARDS = ["overall", "coding", "reasoning", "knowledge", "professional"] as const;

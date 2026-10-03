@@ -97,10 +97,10 @@ export function registerSite(app: FastifyInstance) {
     const q = looseQuery(req);
     const filters = await parseFilters(q);
     const limit = Math.min(Math.max(Number(q.limit) || 20, 1), 40);
-    const unfiltered = !filters.domain && filters.channel === "all" && !filters.category && !filters.tag && !filters.topic && !q.cursor;
+    const showHot = filters.channel === "all" && !filters.category && !filters.tag && !filters.topic && !q.cursor;
     const [data, hot] = await Promise.all([
       loadTimeline({ ...filters, cursor: q.cursor || null, limit }),
-      unfiltered ? loadHotStrip() : null,
+      showHot ? loadHotStrip(filters.domain) : null,
     ]);
     const body = { ...data, hot, generatedAt: new Date().toISOString() };
     const cc = cacheUntil(reply, 60, data.refreshAt);

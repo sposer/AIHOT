@@ -509,6 +509,17 @@ test("domain hot ranking finds global candidates beyond ten and filters members 
       await publishArticle(id!, released());
     }
     await signals(s!.id, [ai, medical], new Date(at.getTime() - 3 * 3600_000));
+    // The home strip requires three candidates; keep the shared story first in this scope.
+    for (let i = 0; i < 2; i++) {
+      const id = await article(["medical"]);
+      const evidence = await article(["medical"]);
+      ids.push(id, evidence);
+      const extraPublicId = await storyFor(id);
+      const [extra] = await sql<{ id: number }[]>`SELECT id FROM stories WHERE public_id = ${extraPublicId}`;
+      storyIds.push(extra!.id);
+      await publishArticle(id, released());
+      await signals(extra!.id, [id, evidence], new Date(at.getTime() - (6 + i) * 3600_000));
+    }
     rankingId = (await computeHotRanking(at)).id;
     const ranking = (await latestHotRanking())!;
     const raw = ranking.entries.find((e) => e.storyPublicId === publicId)!;
@@ -527,6 +538,19 @@ test("domain hot ranking finds global candidates beyond ten and filters members 
     assert.deepEqual(entry.domains, ["ai", "medical", "policy"]);
     assert.equal(entry.summary, summary, "the overview extras cache cannot omit a domain-only candidate");
     assert.equal(new URL(entry.cover.url, config.siteUrl).searchParams.get("u"), medicalCover);
+    const home = JSON.parse((await get("/api/site/timeline?domain=medical")).body);
+    assert.equal(scoped.entries.length, 3);
+    assert.ok(home.hot, "primary domain scope retains its matching home strip");
+    assert.deepEqual(home.hot.map((e: any) => e.storyPublicId), scoped.entries.map((e: any) => e.story.publicId));
+    assert.equal(home.hot[0].itemId, medical);
+    const overviewHome = JSON.parse((await get("/api/site/timeline")).body);
+    assert.deepEqual(overviewHome.hot.map((e: any) => e.storyPublicId), overview.entries.slice(0, 5).map((e: any) => e.story.publicId));
+    for (const filter of ["category=ai-models", "channel=firstParty", "tag=clinical"]) {
+      assert.equal(JSON.parse((await get(`/api/site/timeline?domain=medical&${filter}`)).body).hot, null);
+    }
+    const firstPage = JSON.parse((await get("/api/site/timeline?domain=medical&limit=1")).body);
+    assert.ok(firstPage.nextCursor);
+    assert.equal(JSON.parse((await get(`/api/site/timeline?domain=medical&cursor=${encodeURIComponent(firstPage.nextCursor)}`)).body).hot, null);
     const v1 = JSON.parse((await get("/api/v1/hot-topics?domain=medical")).body).items.find((e: any) => e.id === medical);
     assert.equal(v1.rank, 1);
     assert.deepEqual(v1.domains, entry.domains);

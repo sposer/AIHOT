@@ -1,5 +1,4 @@
 // Public API v1 (long-term). Field shapes follow reference/public-v1.openapi.json 2.0.0 (the paths stay /api/v1).
-import { FEATURES } from "@aihot/industry/features";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { V1_CACHE_CONTROL } from "@aihot/contracts/http-policy";
 import { DOMAIN_KEYS, PUBLIC_API_CATEGORY_KEYS, type DomainKey, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
@@ -8,7 +7,6 @@ import { SearchBusyError } from "@aihot/backend/publication/pool";
 import { selectedChanges, selectedSnapshot, SnapshotRequiredError, v1Items } from "@aihot/backend/publication/v1";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { v1Dailies, v1Daily } from "@aihot/backend/publication/reports";
-import { codexResetsRecent, codexResetsSnapshot } from "@aihot/backend/monitor/read";
 import { isValidDate } from "@aihot/contracts/time";
 import { applyPublicHeaders, QueryError, sendJsonWithEtag, sendProblem, strictQuery } from "../http/respond.ts";
 
@@ -78,8 +76,6 @@ export function registerV1(app: FastifyInstance) {
     const body = await v1Items({ domain: domainParam(q.domain), mode, window, by, category, q: search, limit, cursor: q.cursor ?? null });
     return sendJsonWithEtag(req, reply, body, { etagPrefix: "v1-items", cacheControl: V1_CACHE_CONTROL.items });
   }));
-
-  if (FEATURES.codexResetMonitor) registerCodexResets(app);
 
   app.get("/api/v1/hot-topics", publicHandler(async (req, reply) => {
     const q = strictQuery(req, ["domain"]);
@@ -164,20 +160,4 @@ export function registerV1Fallbacks(app: FastifyInstance) {
   }
   app.get("/api/v1", notFound);
   app.get("/api/v1/*", notFound);
-}
-
-/** The Codex reset monitor's endpoints (an optional module, industry/features.ts). */
-function registerCodexResets(app: FastifyInstance) {
-  app.get("/api/v1/codex-resets", publicHandler(async (req, reply) => {
-    strictQuery(req, []);
-    const body = await codexResetsSnapshot();
-    return sendJsonWithEtag(req, reply, body, { etagPrefix: "v1-codex-resets", cacheControl: V1_CACHE_CONTROL.codexResets });
-  }));
-
-  // The same snapshot limited to the last week and the events still waiting to land: what a poller needs.
-  app.get("/api/v1/codex-resets/recent", publicHandler(async (req, reply) => {
-    strictQuery(req, []);
-    const body = await codexResetsRecent();
-    return sendJsonWithEtag(req, reply, body, { etagPrefix: "v1-codex-resets-recent", cacheControl: V1_CACHE_CONTROL.codexResets });
-  }));
 }

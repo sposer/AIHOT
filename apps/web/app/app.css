@@ -51,11 +51,6 @@
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
   --color-ok-ink: var(--ok-ink);
-  --color-cal-plain: var(--cal-plain);
-  --color-cal-confirmed: var(--cal-confirmed);
-  --color-cal-announced: var(--cal-announced);
-  --color-cal-key-confirmed: var(--cal-key-confirmed);
-  --color-cal-key-announced: var(--cal-key-announced);
   --color-panel-quiet: var(--panel-quiet);
   --color-rank-1: var(--rank-1);
   --color-rank-2: var(--rank-2);
@@ -120,12 +115,6 @@
   --ok: #2f7d5c;
   --ok-soft: rgba(47, 125, 92, 0.1);
   --ok-ink: #2a6e51;
-  /* Reset monitor: days mixed from the landed (green) and announced (amber) tones over the surface. */
-  --cal-plain: rgba(28, 39, 51, 0.024);
-  --cal-confirmed: color-mix(in srgb, var(--ok-ink) 12%, var(--surface));
-  --cal-announced: color-mix(in srgb, var(--amber-ink) 14%, var(--surface));
-  --cal-key-confirmed: color-mix(in srgb, var(--ok-ink) 30%, var(--surface));
-  --cal-key-announced: color-mix(in srgb, var(--amber-ink) 30%, var(--surface));
   --panel-quiet: color-mix(in srgb, var(--bg) 48%, var(--surface));
   --rank-1: #b3402a;
   --rank-2: #a3642f;
@@ -173,7 +162,6 @@
   --ok: #5fc79a;
   --ok-soft: rgba(95, 199, 154, 0.12);
   --ok-ink: #7fd1ad;
-  --cal-plain: rgba(255, 255, 255, 0.03);
   --rank-1: #d86a52;
   --rank-2: #d18a5e;
   --rank-3: #d3b26a;
@@ -512,23 +500,4 @@
 /* Report pages read on white paper in the light theme (F10); the archive column is halfway between the site sidebar and the paper. */
 :root:not([data-theme="dark"]) body:has(.report-shell) {
   background: var(--surface);
-}
-/* Reset monitor status card: a 135° wash of the state's tone (amber pending, green landed, rose alert). */
-.cr-wash {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--tone, var(--ink-4)) 7%, var(--surface)), var(--surface) 60%);
-}
-/* The state dot carries a soft halo that breathes while something is pending. */
-.cr-dot {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 9999px;
-  background: currentColor;
-  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent);
-}
-.cr-dot-live {
-  animation: cr-pulse 2s ease-in-out infinite;
-}
-@keyframes cr-pulse {
-  50% { box-shadow: 0 0 0 7px color-mix(in srgb, currentColor 6%, transparent); }
 }

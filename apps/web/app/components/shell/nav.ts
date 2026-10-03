@@ -31,17 +31,9 @@ export const SIDEBAR: Array<{ title: string; items: NavItem[] }> = [
       { to: "/starred", label: "收藏", icon: IconBookmark },
     ],
   },
-  // The optional AI-only modules (industry/features.ts).
-  ...(FEATURES.leaderboard || FEATURES.codexResetMonitor
-    ? [
-        {
-          title: "模型",
-          items: [
-            ...(FEATURES.leaderboard ? [{ to: "/leaderboard", label: "模型榜", icon: IconChart }] : []),
-            ...(FEATURES.codexResetMonitor ? [{ to: "/codex-reset", label: "Tibo重置监控", icon: IconHistory }] : []),
-          ],
-        },
-      ]
+  // The optional AI-only leaderboard (industry/features.ts).
+  ...(FEATURES.leaderboard
+    ? [{ title: "模型", items: [{ to: "/leaderboard", label: "模型榜", icon: IconChart }] }]
     : []),
   {
     title: "更多",
@@ -62,7 +54,7 @@ export const TABBAR: NavItem[] = [
 ];
 
 /** Pages reached from the mobile "更多" tab keep that tab highlighted. */
-export const MORE_PATHS = ["/more", "/hot", "/topics", "/starred", "/leaderboard", "/codex-reset", "/agent", "/about", "/changelog", "/feedback", "/terms", "/privacy"];
+export const MORE_PATHS = ["/more", "/hot", "/topics", "/starred", "/leaderboard", "/agent", "/about", "/changelog", "/feedback", "/terms", "/privacy"];
 
 export function tabIsActive(item: NavItem, pathname: string): boolean {
   if (item.end) return pathname === item.to;

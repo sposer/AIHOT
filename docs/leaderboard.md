@@ -1,6 +1,6 @@
-# 模型榜与 Codex 重置监控
+# 模型榜
 
-这两个模块只对 AI 行业有意义。别的行业在 `industry/features.ts` 里关掉即可（见 [把它改成你的行业](customize.md#6-只对-ai-有意义的两个模块industryfeaturests)）。
+模型榜只对 AI 行业有意义。别的行业在 `industry/features.ts` 里关掉即可，见[定制方法](customize.md#6-ai-模型榜industryfeaturests)。
 
 ## 模型榜（`/leaderboard`）
 
@@ -41,13 +41,3 @@ node --env-file=.env scripts/lb-fetch-check.ts        # 只抓不写，和已存
 ```
 
 **改方法**：`v15.ts` 里的每个常数都是方法的一部分，改了会改变读者看到的排名。改方法时，把 `/leaderboard/rules` 页面上的文字一起改掉，并升方法版本：页面上写的必须和实际算法一致。
-
-## Codex 重置监控（`/codex-reset`）
-
-盯 OpenAI Codex 团队的 Tibo（X 账号 @thsottiaux）发布的 Codex 用量重置消息：预告、进展、确认完成、撤回，给出预计生效时间和原帖链接。机器可读的接口是 `/api/v1/codex-resets`。
-
-- 需要 `SOCIALDATA_API_KEY` 读 X。没有这个 key 时监控不运行，页面上只会显示“暂无重置记录”，这种情况建议把模块关掉。
-- 平时每 5 分钟看一次，有预告或故障时 3 分钟一次；每天 04:40 再回看过去 48 小时补漏。
-- 帖子由模型识别（`MONITOR_MODEL`，默认用默认模型），但状态怎么变由代码决定：模型的措辞本身不能确认任何事。
-- 拿不准的识别会停在后台“Codex 重置”页等人看，可以改归属、补充、撤回。
-- 配置了飞书内容推送时，重置预告和确认会推送到群里。

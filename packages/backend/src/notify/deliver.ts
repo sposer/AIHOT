@@ -1,4 +1,4 @@
-// Content-group deliveries (Feishu custom-bot webhooks): selected cards and reset pushes.
+// Content-group deliveries (Feishu custom-bot webhooks): selected cards.
 // One row per target and dedupe key, so nothing is pushed twice; an outcome we cannot know
 // ("unknown") is never retried automatically; content older than a target's enabled_at is never
 // back-filled. FEISHU_CONTENT_PUSH_ENABLED is the safety valve: off, deliveries are recorded as
@@ -8,7 +8,7 @@ import { sql } from "../db.ts";
 import { postWebhook } from "./feishu.ts";
 
 export interface DeliveryRequest {
-  subjectKind: "codex_reset" | "selected";
+  subjectKind: "selected";
   subjectId: string;
   dedupeKey: string;
   /** When the underlying content appeared; older than a target's enabled_at means skip. */

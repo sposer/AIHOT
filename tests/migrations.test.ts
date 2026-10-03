@@ -44,3 +44,45 @@ test("0002 assigns legacy AI data once while preserving report and revision iden
     await tx.unsafe(`DROP SCHEMA "${schema}" CASCADE`);
   });
 });
+
+test("0003 removes reset monitor data and settings while preserving shared history", async () => {
+  const migrations = await Promise.all(["0001_core.sql", "0002_domains.sql", "0003_remove_monitor.sql"].map((file) =>
+    readFile(new URL(`../database/migrations/${file}`, import.meta.url), "utf8"),
+  ));
+  const schema = `test_migration_reset_${T}`;
+  const activeAlert = { title: "Collection stopped", level: "now", since: "2026-10-01T00:00:00Z", sentAt: "2026-10-01T01:00:00Z" };
+  await sql.begin(async (tx) => {
+    await tx.unsafe(`CREATE SCHEMA "${schema}"`);
+    await tx.unsafe(`SET LOCAL search_path = "${schema}", public`);
+    await tx.unsafe(migrations[0]!);
+    await tx.unsafe(migrations[1]!);
+    await tx`INSERT INTO monitor_posts (id, author, published_at, text, url)
+      VALUES ('post', 'thsottiaux', now(), 'Reset announced', 'https://example.com/post')`;
+    await tx`INSERT INTO monitor_events (id, type, status, title, created_at, updated_at)
+      VALUES ('event', 'direct_reset', 'announced', 'Reset', now(), now())`;
+    await tx`INSERT INTO monitor_event_posts (event_id, post_id, stage, text, original_text)
+      VALUES ('event', 'post', 'announce', 'Reset announced', 'Reset announced')`;
+    await tx`INSERT INTO monitor_state (key, value) VALUES ('cursor', '{"sinceId":"post"}')`;
+    await tx`INSERT INTO settings (key, value) VALUES ('models.monitor', '{"model":"default"}'), ('models.score', '{"model":"default"}')`;
+    await tx`INSERT INTO settings (key, value) VALUES ('alerts.state', ${tx.json({
+      "monitor.stuck": activeAlert, "monitor.review": activeAlert, "content.collect": activeAlert,
+    })})`;
+    await tx`INSERT INTO notify_targets (key, purpose, kind) VALUES ('history', 'content', 'log')`;
+    await tx`INSERT INTO deliveries (target_key, subject_kind, subject_id, dedupe_key, status, payload)
+      VALUES ('history', 'codex_reset', 'event', 'history', 'unknown', '{"eventId":"event"}')`;
+    await tx`INSERT INTO sources (id, name, kind, domains) VALUES ('retained', 'Retained', 'rss', ARRAY['medical'])`;
+    await tx.unsafe(migrations[2]!);
+    const tables = await tx<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname = ${schema} AND tablename LIKE 'monitor_%'`;
+    assert.equal(tables.length, 0);
+    const settings = await tx<{ key: string; value: unknown }[]>`SELECT key, value FROM settings ORDER BY key`;
+    assert.deepEqual([...settings], [
+      { key: "alerts.state", value: { "content.collect": activeAlert } },
+      { key: "models.score", value: { model: "default" } },
+    ]);
+    const [delivery] = await tx`SELECT subject_kind, subject_id, status, payload FROM deliveries`;
+    assert.deepEqual(delivery, { subject_kind: "codex_reset", subject_id: "event", status: "unknown", payload: { eventId: "event" } });
+    const [source] = await tx`SELECT id, domains FROM sources`;
+    assert.deepEqual(source, { id: "retained", domains: ["medical"] });
+    await tx.unsafe(`DROP SCHEMA "${schema}" CASCADE`);
+  });
+});

@@ -1,4 +1,4 @@
-// Worker process: queues and schedules for collection, processing, events, reports, monitors and ops.
+// Worker process: queues and schedules for collection, processing, events, reports and ops.
 import { assertProductionSecrets } from "@aihot/backend/config";
 import { FEATURES } from "@aihot/industry/features";
 import { closeDb, sql } from "@aihot/backend/db";

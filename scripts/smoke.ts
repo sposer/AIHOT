@@ -40,7 +40,6 @@ for (const domain of DOMAIN_KEYS) {
 // the worker starts; with collection off there is nothing to compute).
 const LEADERBOARD = FEATURES.leaderboard ? ["/leaderboard", "/leaderboard/rules", "/leaderboard/sources"] : [];
 PAGES.push(...LEADERBOARD);
-if (FEATURES.codexResetMonitor) PAGES.push("/codex-reset");
 
 let failed = 0;
 async function check(path: string, expect: (res: Response, body: string) => string | null) {

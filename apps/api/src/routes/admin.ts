@@ -10,7 +10,6 @@ import { modelsOverview, switchModel } from "@aihot/backend/admin/models";
 
 import { contentChain, detachFromFact, mergeStories, overrideFields, rerun, searchContent, setSeoIndexed, setVisibility } from "@aihot/backend/admin/content";
 import { banSource, eraseFeedback, feedbackScreenshot, listFeedback, unbanSource, updateFeedback } from "@aihot/backend/admin/feedback";
-import { listMonitorEvents, listMonitorPosts, relinkPost, resolveMonitorPost, reviewReceipt, setWithdrawn, updateMonitorEvent } from "@aihot/backend/admin/monitor";
 import { releaseReceipt, requeueFailedArticles, resolveDelivery, runsOverview } from "@aihot/backend/admin/runs";
 import { listBudgets, listTargets, replaceContactQr, setTargetEnabled, updateBudget } from "@aihot/backend/admin/settings";
 import { createSource, fetchNow, listSources, previewSource, sourceDetail, updateSource } from "@aihot/backend/admin/sources";
@@ -97,15 +96,6 @@ export function registerAdmin(app: FastifyInstance) {
   app.post("/api/admin/deliveries/:id/resolve", adminHandler(async (req, reply, admin) => orNotFound(req, reply, await resolveDelivery(Number(param(req, "id")), body(req) as never, actorOf(admin)))));
   app.post("/api/admin/processing/requeue", adminHandler(async (req, _reply, admin) => requeueFailedArticles(body(req) as never, actorOf(admin))));
 
-  // Reset monitor corrections (F12)
-  app.get("/api/admin/monitor/events", adminHandler(async (req) => listMonitorEvents({ withdrawn: q(req).withdrawn === "1" })));
-  app.get("/api/admin/monitor/posts", adminHandler(async (req) => listMonitorPosts({ filter: q(req).filter as never, page: page(req) })));
-  app.patch("/api/admin/monitor/events/:id", adminHandler(async (req, reply, admin) => orNotFound(req, reply, await updateMonitorEvent(param(req, "id"), body(req) as never, actorOf(admin)))));
-  app.post("/api/admin/monitor/events/:id/receipt-review", adminHandler(async (req, reply, admin) => orNotFound(req, reply, await reviewReceipt(param(req, "id"), body(req) as never, actorOf(admin)))));
-  app.post("/api/admin/monitor/events/:id/withdrawn", adminHandler(async (req, reply, admin) => orNotFound(req, reply, await setWithdrawn(param(req, "id"), body(req) as never, actorOf(admin)))));
-  app.post("/api/admin/monitor/relink", adminHandler(async (req, _reply, admin) => relinkPost(body(req) as never, actorOf(admin))));
-  app.post("/api/admin/monitor/posts/:id/resolve", adminHandler(async (req, reply, admin) => orNotFound(req, reply, await resolveMonitorPost(param(req, "id"), body(req) as never, actorOf(admin)))));
-
   // Settings
   app.get("/api/admin/settings", adminHandler(async () => ({ contact: await loadContact(), targets: await listTargets(), budgets: await listBudgets() })));
   app.post("/api/admin/settings/contact-qr", adminHandler(async (req, _reply, admin) => {
@@ -142,9 +132,7 @@ export function registerAdmin(app: FastifyInstance) {
     const [c] = await sql<Record<string, number>[]>`
       SELECT (SELECT count(*)::int FROM feedback WHERE status = 'new') AS feedback,
              (SELECT count(*)::int FROM sources WHERE enabled AND health = 'failing') AS sources,
-             (SELECT count(*)::int FROM receipts WHERE status = 'unknown') + (SELECT count(*)::int FROM deliveries WHERE status = 'unknown') AS runs,
-             (SELECT count(*)::int FROM monitor_posts WHERE (recognition->>'needsReview')::boolean IS TRUE AND (recognition->>'reviewed')::boolean IS NOT TRUE AND processed_at > now() - interval '7 days')
-               + (SELECT count(*)::int FROM monitor_posts WHERE processed_at IS NULL AND collected_at < now() - interval '20 minutes') AS monitor`;
+             (SELECT count(*)::int FROM receipts WHERE status = 'unknown') + (SELECT count(*)::int FROM deliveries WHERE status = 'unknown') AS runs`;
     return c;
   }));
 

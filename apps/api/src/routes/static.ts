@@ -103,7 +103,6 @@ async function openApiJson(): Promise<string> {
     for (const v of Object.values(o)) walk(v);
   };
   walk(doc);
-  if (!FEATURES.codexResetMonitor) for (const p of Object.keys(doc.paths)) if (p.startsWith("/api/v1/codex-resets")) delete doc.paths[p];
   openApi = JSON.stringify(doc, null, 2);
   return openApi;
 }

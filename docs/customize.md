@@ -76,12 +76,9 @@
 
 门槛和五维权重由 `industry/selection.ts` 共享管理。需要调整时，按 [精选与校准](selection.md) 确认当前校准边界，再准备标注样本、运行评测并检查错例；不要凭感觉改数字。
 
-## 6. 只对 AI 有意义的两个模块：`industry/features.ts`
+## 6. AI 模型榜：`industry/features.ts`
 
-- `leaderboard`：模型榜（`/leaderboard`）。
-- `codexResetMonitor`：Codex 重置监控（`/codex-reset`）。
-
-别的行业把两项都设为 `false`：导航入口、定时任务、接口和站点地图都会跟着关掉。想彻底删掉代码，删这些目录并处理掉编译错误即可：`packages/backend/src/leaderboard/`、`packages/backend/src/monitor/`、`apps/web/app/features/leaderboard/`、`apps/web/app/features/monitor/`、`apps/web/app/routes/leaderboard*.tsx`、`apps/web/app/routes/codex-reset.tsx`、`apps/api/src/routes/leaderboard.ts`。
+`leaderboard` 控制模型榜（`/leaderboard`）。别的行业把它设为 `false`：导航入口、定时任务、接口和站点地图都会跟着关掉。模型榜的配置和代码位置见[模型榜](leaderboard.md)。
 
 ## 7. 品牌：`industry/brand/`
 

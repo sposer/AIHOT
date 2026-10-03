@@ -44,10 +44,6 @@ export function llmsTxt(opts: { reports: ReadonlyArray<{ kind: ReportKind; scope
   lines.push(`- [公开 API v1 · 最近资讯](${u("/api/v1/items")}): JSON，支持 mode=selected/all、window=24h/7d、by=timeline/published、domain、category、q、limit 与 cursor`);
   lines.push(`- [公开 API v1 · 当前热点](${u("/api/v1/hot-topics")}): 热点 Top 10；支持 domain；每条含从 1 开始的 rank 和当前公开报道派生的 domains，links.story 指向同一全局事件页`);
   lines.push(`- [公开 API v1 · 事件详情](${u("/api/v1/stories/{publicId}")}): 事件报道时间线与随演化更新的综述；publicId 只来自 hot-topics 的 links.story，不要猜测`);
-  if (FEATURES.codexResetMonitor) {
-    lines.push(`- [公开 API v1 · Codex 重置监控（轮询用）](${u("/api/v1/codex-resets/recent")}): 最近 7 天与尚未落地的预告，结构与完整快照相同；建议每 5 分钟带 If-None-Match 轮询`);
-    lines.push(`- [公开 API v1 · Codex 重置监控（完整历史）](${u("/api/v1/codex-resets")}): 全部重置与发卡记录的日历快照`);
-  }
   for (const scope of dailyScopes) {
     lines.push(`- [公开 API v1 · 最新${title("daily", scope)}](${u(`/api/v1/dailies/latest${query(scope)}`)}): 最新一期结构化报告`);
     lines.push(`- [公开 API v1 · ${title("daily", scope)}列表](${u(`/api/v1/dailies${query(scope)}`)}): 历史索引；指定日期使用 /api/v1/dailies/{YYYY-MM-DD}${query(scope)}`);

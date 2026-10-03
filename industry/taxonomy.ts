@@ -1,15 +1,6 @@
 // 领域与内容分类：领域回答“涉及什么”，类别回答“是什么内容”，两者独立。
 // 模型按这里的词表归类；网页、公开接口和报告使用同一组身份。
 
-// decision: 文章支持多领域归属；not 单一主领域 because 医疗、法律、军事与政策报道会实质交叉，信源覆盖范围不能替代逐篇判断。
-export const DOMAINS = [
-  { key: "ai", label: "AI", guide: "人工智能技术、模型、智能体、AI 产品和工程，以及 AI 对社会与行业的实质影响" },
-  { key: "medical", label: "医疗", guide: "医学研究、临床证据、药品与医疗器械、公共卫生、诊疗及医疗服务" },
-  { key: "legal", label: "法律", guide: "法律法规、司法解释、判决与案件、执法、权利义务及法律实践" },
-  { key: "military", label: "军事", guide: "国防、武装冲突、军事行动、装备、战略与安全研究" },
-  { key: "policy", label: "政策", guide: "公共政策、政府规章与决策、监管、治理及政策实施与评估" },
-] as const;
-
 /**
  * 网页上的类别（筛选栏、卡片角标、RSS 分类订阅）。key 是网址和接口里的身份，上线后不要改。
  * section 是日报里的分节标题（几个类别可以共用一节，按这里的顺序排）；guide 告诉模型怎么归类。
@@ -22,6 +13,81 @@ export const CATEGORIES = [
   { key: "paper", label: "论文", section: "论文研究", guide: "医学、法律、军事、政策与技术领域的研究论文、临床研究、报告、基准与数据集" },
   { key: "tip", label: "教程", section: "技巧与观点", guide: "教程、实践经验、使用技巧、提示词与工具用法、深度技术讲解" },
   { key: "opinion", label: "观点", section: "技巧与观点", guide: "人物观点、评论、分析、访谈、现象与趋势讨论" },
+] as const;
+
+export const CHANNEL_KEYS = ["all", "news", "x", "firstParty"] as const;
+export const CHANNEL_LABELS: Record<(typeof CHANNEL_KEYS)[number], string> = {
+  all: "全部",
+  news: "资讯",
+  x: "X",
+  firstParty: "一手",
+};
+
+const COMMON_COLUMNS = [
+  { key: "all", label: CHANNEL_LABELS.all, filters: {} },
+  { key: "firstParty", label: CHANNEL_LABELS.firstParty, filters: { channel: "firstParty" } },
+] as const;
+
+/** 概览与 AI 的子栏目复用既有内容类别。 */
+export const DEFAULT_COLUMNS = [
+  ...COMMON_COLUMNS,
+  ...CATEGORIES.map(({ key, label }) => ({ key, label, filters: { category: key } })),
+] as const;
+
+// decision: 子栏目使用展示筛选预设；not 每领域存储类别 because 现有 category/tag/channel 已能表达入口，另建类别会重复分类身份并要求重分析和数据迁移。
+// decision: 文章支持多领域归属；not 单一主领域 because 医疗、法律、军事与政策报道会实质交叉，信源覆盖范围不能替代逐篇判断。
+export const DOMAINS = [
+  {
+    key: "ai", label: "AI", guide: "人工智能技术、模型、智能体、AI 产品和工程，以及 AI 对社会与行业的实质影响",
+    columns: DEFAULT_COLUMNS,
+  },
+  {
+    key: "medical", label: "医疗", guide: "医学研究、临床证据、药品与医疗器械、公共卫生、诊疗及医疗服务",
+    columns: [
+      ...COMMON_COLUMNS,
+      { key: "clinical-research", label: "临床研究", filters: { tag: "临床研究" } },
+      { key: "medicines", label: "药品", filters: { tag: "药品" } },
+      { key: "medical-devices", label: "器械", filters: { tag: "医疗器械" } },
+      { key: "public-health", label: "公共卫生", filters: { tag: "公共卫生" } },
+      { key: "care", label: "诊疗", filters: { tag: "诊疗" } },
+      { key: "policy", label: "政策监管", filters: { tag: "政策/监管" } },
+    ],
+  },
+  {
+    key: "legal", label: "法律", guide: "法律法规、司法解释、判决与案件、执法、权利义务及法律实践",
+    columns: [
+      ...COMMON_COLUMNS,
+      { key: "legislation", label: "立法", filters: { tag: "立法" } },
+      { key: "judiciary", label: "司法案件", filters: { tag: "司法/案件" } },
+      { key: "enforcement", label: "执法", filters: { tag: "执法" } },
+      { key: "rights", label: "权利保障", filters: { tag: "权利保障" } },
+      { key: "policy", label: "政策监管", filters: { tag: "政策/监管" } },
+      { key: "paper", label: "研究", filters: { category: "paper" } },
+      { key: "opinion", label: "观点", filters: { category: "opinion" } },
+    ],
+  },
+  {
+    key: "military", label: "军事", guide: "国防、武装冲突、军事行动、装备、战略与安全研究",
+    columns: [
+      ...COMMON_COLUMNS,
+      { key: "defence", label: "战略", filters: { tag: "国防/战略" } },
+      { key: "military-operations", label: "行动", filters: { tag: "军事行动" } },
+      { key: "military-equipment", label: "装备", filters: { tag: "军事装备" } },
+      { key: "paper", label: "研究", filters: { category: "paper" } },
+      { key: "opinion", label: "观点", filters: { category: "opinion" } },
+    ],
+  },
+  {
+    key: "policy", label: "政策", guide: "公共政策、政府规章与决策、监管、治理及政策实施与评估",
+    columns: [
+      ...COMMON_COLUMNS,
+      { key: "policy", label: "政策监管", filters: { tag: "政策/监管" } },
+      { key: "policy-implementation", label: "实施", filters: { tag: "政策实施" } },
+      { key: "governance", label: "治理", filters: { tag: "公共治理" } },
+      { key: "paper", label: "研究", filters: { category: "paper" } },
+      { key: "opinion", label: "观点", filters: { category: "opinion" } },
+    ],
+  },
 ] as const;
 
 /**

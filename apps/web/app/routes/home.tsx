@@ -5,7 +5,6 @@ import type { TimelineResponse } from "@aihot/contracts/site";
 import { isCategoryKey, isChannelKey, isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString, releaseBoundCache } from "../lib/api.server";
 import { listPath, organizationLd, pageMeta } from "../lib/seo";
-import { Wordmark } from "../components/Logo";
 import { Timeline } from "../features/feed/Timeline";
 import { HotTopics } from "../features/feed/HotTopics";
 import { ColumnTabs, SearchField, SearchIconLink } from "../features/feed/Filters";
@@ -57,11 +56,6 @@ export default function Home() {
   const keep = { category: filters.category, tag: filters.tag, channel: filters.channel === "all" ? null : filters.channel };
   return (
     <div className="pb-6">
-      {/* Phones: brand bar, today's hot topics, then the feed under "最新精选". */}
-      <div className="flex h-14 items-center justify-between lg:hidden">
-        <Wordmark size={20} className="text-ink" />
-        <TodayLabel />
-      </div>
       <div className="hidden lg:block">
         <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">精选</h1>
         <div className="mb-5 mt-4 flex items-center justify-between gap-4">
@@ -72,8 +66,11 @@ export default function Home() {
 
       {data.hot && <HotTopics entries={data.hot} />}
 
-      <h2 className="mt-6 text-[20px] font-bold text-ink lg:hidden">最新精选</h2>
-      <div className="-mx-4 mt-3 flex items-center gap-2 pl-4 pr-2 lg:hidden">
+      <div className="mt-6 flex items-baseline justify-between lg:hidden">
+        <h2 className="text-[20px] font-bold text-ink">最新精选</h2>
+        <TodayLabel />
+      </div>
+      <div className="mb-5 mt-3 flex items-center gap-2 lg:hidden">
         <ColumnTabs base="/" filters={filters} layoutId="home-cat-mobile" size="sm" className="min-w-0 flex-1" />
         <SearchIconLink base={searchBase} />
       </div>

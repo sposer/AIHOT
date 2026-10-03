@@ -8,6 +8,7 @@ import { BrandMark } from "../features/leaderboard/BrandMark";
 import { StatusChip } from "../features/leaderboard/StatusChip";
 import { pct, shortStamp } from "../features/leaderboard/format";
 import { IconArrowLeft, IconArrowUpRight, IconChevronDown } from "../components/icons";
+import { useDomainNavigation } from "../components/shell/nav";
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   return loadOr404<LbSourceDetail>(`/api/site/leaderboard/sources/${encodeURIComponent(params.key)}`, { signal: request.signal });
@@ -55,11 +56,12 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export default function LeaderboardSourcePage() {
+  const { href } = useDomainNavigation();
   const d = useLoaderData<typeof loader>();
   const { source } = d;
   return (
     <div className="pb-12">
-      <Link to="/leaderboard/sources" className="mt-4 inline-flex items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent lg:mt-0">
+      <Link to={href("/leaderboard/sources")} className="mt-4 inline-flex items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent lg:mt-0">
         <IconArrowLeft size={14} /> 评测来源
       </Link>
 
@@ -131,7 +133,7 @@ export default function LeaderboardSourcePage() {
                     <td className="mono px-4 py-3.5 text-[13px] text-ink-4 lg:px-[22px]">{r.sourceRank ?? "—"}</td>
                     <td className="px-3 py-3.5">
                       {r.modelSlug ? (
-                        <Link to={`/leaderboard/${r.modelSlug}`} className="mono break-all text-[12.5px] font-semibold text-ink transition-colors hover:text-accent">
+                        <Link to={href(`/leaderboard/${r.modelSlug}`)} className="mono break-all text-[12.5px] font-semibold text-ink transition-colors hover:text-accent">
                           {r.sourceModelName}
                         </Link>
                       ) : (

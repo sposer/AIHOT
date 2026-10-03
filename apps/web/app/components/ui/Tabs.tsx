@@ -75,39 +75,42 @@ export function PillTabs({
 }) {
   const links = items.some((t) => t.to);
   const Track = links ? "nav" : "div";
+  // decision: fix the shared PillTabs shell; not add a feed-only capsule because PillTabs already owns the scrolling track and thumb geometry.
   return (
-    <div className={`scrollbar-none max-w-full overflow-x-auto ${fill ? "w-full" : ""} ${className}`}>
-      <Track
-        data-pill-track=""
-        aria-label={label}
-        role={links ? undefined : "tablist"}
-        className={`${fill ? "grid w-full" : "inline-flex w-max"} gap-0.5 rounded-full bg-bg-sunk p-[3px] ring-1 ring-inset ring-line-soft dark:bg-bg-muted/60`}
-        style={fill ? { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` } : undefined}
-      >
-        {items.map((t) => {
-          const on = t.key === active;
-          const inner = (
-            <>
-              {on && <Thumb id={layoutId} />}
-              <span className="relative inline-flex items-center gap-1">
-                {t.label}
-                {t.count !== undefined && t.count !== null && <span className={`num text-[0.86em] font-normal ${on ? "text-ink-3" : "text-ink-4"}`}>{t.count}</span>}
-              </span>
-            </>
-          );
-          const cls = `relative inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap rounded-full font-medium outline-offset-1 transition-colors duration-150 active:scale-[0.98] ${SIZES[size]} ${on ? "text-ink" : "text-ink-3 hover:text-ink"}`;
-          const TabLink = t.prefetch === "intent" ? IntentLink : Link;
-          return t.to ? (
-            <TabLink key={t.key} to={t.to} replace={t.replace} preventScrollReset aria-current={on ? "page" : undefined} className={cls}>
-              {inner}
-            </TabLink>
-          ) : (
-            <button key={t.key} type="button" role="tab" aria-selected={on} onClick={() => onSelect?.(t.key)} className={cls}>
-              {inner}
-            </button>
-          );
-        })}
-      </Track>
+    <div className={`min-w-0 max-w-full rounded-full bg-bg-sunk px-[3px] ring-1 ring-inset ring-line-soft dark:bg-bg-muted/60 ${fill ? "w-full" : "w-fit"} ${className}`}>
+      <div className="scrollbar-none overflow-x-auto rounded-full">
+        <Track
+          data-pill-track=""
+          aria-label={label}
+          role={links ? undefined : "tablist"}
+          className={`${fill ? "grid w-full" : "inline-flex w-max"} gap-0.5 p-[3px]`}
+          style={fill ? { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` } : undefined}
+        >
+          {items.map((t) => {
+            const on = t.key === active;
+            const inner = (
+              <>
+                {on && <Thumb id={layoutId} />}
+                <span className="relative inline-flex items-center gap-1">
+                  {t.label}
+                  {t.count !== undefined && t.count !== null && <span className={`num text-[0.86em] font-normal ${on ? "text-ink-3" : "text-ink-4"}`}>{t.count}</span>}
+                </span>
+              </>
+            );
+            const cls = `relative inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap rounded-full font-medium outline-offset-1 transition-colors duration-150 active:scale-[0.98] ${SIZES[size]} ${on ? "text-ink" : "text-ink-3 hover:text-ink"}`;
+            const TabLink = t.prefetch === "intent" ? IntentLink : Link;
+            return t.to ? (
+              <TabLink key={t.key} to={t.to} replace={t.replace} preventScrollReset aria-current={on ? "page" : undefined} className={cls}>
+                {inner}
+              </TabLink>
+            ) : (
+              <button key={t.key} type="button" role="tab" aria-selected={on} onClick={() => onSelect?.(t.key)} className={cls}>
+                {inner}
+              </button>
+            );
+          })}
+        </Track>
+      </div>
     </div>
   );
 }

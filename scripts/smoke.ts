@@ -11,7 +11,7 @@ const at = process.argv.indexOf("--base");
 const base = (at > 0 ? process.argv[at + 1] : process.env.SITE_URL) ?? "http://localhost:3000";
 
 const PAGES = ["/", "/all", "/hot", "/topics", "/starred", "/agent", "/about", "/changelog", "/feedback", "/terms", "/privacy", "/more", "/admin/login"];
-for (const domain of DOMAIN_KEYS) PAGES.push(`/all/${domain}`, `/hot?domain=${domain}`, `/topics?domain=${domain}`);
+for (const domain of DOMAIN_KEYS) PAGES.push(`/?domain=${domain}`, `/all/${domain}`, `/hot?domain=${domain}`, `/topics?domain=${domain}`);
 for (const scope of REPORT_SCOPES) {
   for (const kind of ["daily", "weekly", "monthly"] as ReportKind[]) PAGES.push(reportPath(kind, scope));
   PAGES.push(reportArchivePath(scope));

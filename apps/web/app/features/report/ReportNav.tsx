@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { ReportNavigationEntry, ReportKind, ReportScope } from "@aihot/contracts/site";
 import { PillTabs } from "../../components/ui/Tabs";
-import { DomainTabs } from "../feed/Filters";
 import { IconChevronRight } from "../../components/icons";
 import { KINDS, KIND_LABEL, archiveGroups, archiveMark, chipLabel, reportTitle, reportPath, reportArchivePath } from "./format";
 
@@ -19,14 +18,6 @@ export function ReportArchive({ kind, scope, index, current }: { kind: ReportKin
   return (
     <aside className="sticky top-0 hidden h-dvh w-[280px] shrink-0 flex-col border-r border-line bg-[color-mix(in_srgb,var(--sidebar)_50%,var(--surface))] pl-5 pr-3 lg:flex dark:bg-[color-mix(in_srgb,var(--sidebar)_50%,var(--bg))]">
       <div className="pb-4 pt-8">
-        <DomainTabs
-          scope={scope}
-          layoutId="report-domain-desktop"
-          label="报告领域"
-          overviewLabel="概览"
-          getHref={(target) => reportPath(kind, target)}
-          className="mb-3"
-        />
         <KindSwitch kind={kind} scope={scope} />
       </div>
       <div className="border-b border-line-strong pb-2 pl-1 text-[11.5px] font-semibold tracking-[0.3em] text-ink">往期</div>
@@ -96,23 +87,14 @@ function ArchiveGroup({ g, kind, scope, current, initiallyOpen }: {
   );
 }
 
-/** Phone header: scope and kind tabs, recent issues, and the daily archive. */
+/** Phone header: report kinds, recent issues, and the daily archive in the current scope. */
 export function ReportPhoneNav({ kind, scope, index, current, today }: { kind: ReportKind; scope: ReportScope; index: ReportNavigationEntry[]; current: string | null; today: string }) {
   const recent = index.slice(0, 3);
   const earlier = kind === "daily" ? reportArchivePath(scope) : "#report-history";
   const chip = "inline-flex h-9 shrink-0 items-center rounded-full border px-4 text-[13px] transition-colors";
   return (
     <div className="pt-3 lg:hidden">
-      <DomainTabs
-        scope={scope}
-        layoutId="report-domain-phone"
-        label="报告领域"
-        overviewLabel="概览"
-        getHref={(target) => reportPath(kind, target)}
-      />
-      <div className="mt-3">
-        <PillTabs fill layoutId="report-kind-phone" label="切换日报、周报、月报" active={kind} items={KINDS.map((k) => ({ key: k, label: KIND_LABEL[k], to: reportPath(k, scope) }))} />
-      </div>
+      <PillTabs fill layoutId="report-kind-phone" label="切换日报、周报、月报" active={kind} items={KINDS.map((k) => ({ key: k, label: KIND_LABEL[k], to: reportPath(k, scope) }))} />
       {(recent.length > 0 || kind === "daily") && (
         <div className="scrollbar-none -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1">
           {recent.map((e) => {

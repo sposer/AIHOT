@@ -3,6 +3,7 @@ import type { LbBoardEntry } from "@aihot/contracts/leaderboard";
 import { BrandMark } from "./BrandMark";
 import { EvidenceBadge } from "./Evidence";
 import { modelHref } from "./format";
+import { useDomainNavigation } from "../../components/shell/nav";
 
 // A faint wash of the rank colour from the card's top corner; the number itself carries the rank.
 const WASH = [
@@ -17,13 +18,14 @@ const RANK_TEXT = ["text-rank-1", "text-rank-2", "text-rank-3"];
  * evidence, then who the model is beside the consensus index.
  */
 export function Podium({ entries, board }: { entries: LbBoardEntry[]; board: string }) {
+  const { href } = useDomainNavigation();
   const top = entries.filter((e) => e.rank <= 3).slice(0, 3);
   if (top.length < 3) return null;
   return (
     <ol className="mt-3 hidden gap-3 md:grid md:grid-cols-3" aria-label="前三名">
       {top.map((e, i) => (
         <li key={e.model.slug}>
-          <Link to={modelHref(e.model.slug, board)} prefetch="intent" className={`card card-hover group flex h-full flex-col px-4 py-3.5 ${WASH[i]}`}>
+          <Link to={href(modelHref(e.model.slug, board))} prefetch="intent" className={`card card-hover group flex h-full flex-col px-4 py-3.5 ${WASH[i]}`}>
             <span className="flex items-center justify-between gap-3">
               <span className={`mono text-[11px] font-bold tracking-[0.16em] ${RANK_TEXT[i]}`}>NO.{String(e.rank).padStart(2, "0")}</span>
               <span className="flex items-center gap-2 text-[11.5px] text-ink-4">

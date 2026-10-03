@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import type { HotStripEntry } from "@aihot/contracts/site";
 import { IconArrowRight, IconMinus, IconTrendDown, IconTrendUp } from "../../components/icons";
 import { Faces } from "../hot/Faces";
+import { useDomainNavigation } from "../../components/shell/nav";
 
 // As on the original list: the top three in the ranking colours at the heaviest weight.
 const RANK_COLOR = ["text-[15px] font-black text-rank-1", "text-[15px] font-black text-rank-2", "text-[15px] font-black text-rank-3"];
@@ -25,6 +26,7 @@ function TrendMark({ trend }: { trend: HotStripEntry["trend"] }) {
  * where it is heading. The whole row lights up on hover.
  */
 export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
+  const { href } = useDomainNavigation();
   if (entries.length === 0) return null;
   return (
     <section
@@ -39,7 +41,7 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
           </span>
           当前热点
         </h2>
-        <Link to="/hot" className="group inline-flex items-center gap-1 text-[12.5px] text-ink-3 transition-colors hover:text-accent">
+        <Link to={href("/hot")} className="group inline-flex items-center gap-1 text-[12.5px] text-ink-3 transition-colors hover:text-accent">
           完整榜单 <IconArrowRight size={13} className="transition-transform duration-200 group-hover:translate-x-0.5" />
         </Link>
       </div>
@@ -47,7 +49,7 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
         {entries.slice(0, 5).map((e, i) => (
           <li key={e.rank}>
             <Link
-              to={hrefOf(e)}
+              to={href(hrefOf(e))}
               className="group -mx-2 grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-tile px-2 py-2 transition-colors hover:bg-bg-sunk/70 sm:grid-cols-[20px_minmax(0,1fr)_120px_64px_20px] sm:gap-x-4 dark:hover:bg-bg-muted/40"
             >
               <span className={`num text-center leading-none ${RANK_COLOR[i] ?? "text-[14px] font-bold text-rank-rest"}`}>{e.rank}</span>

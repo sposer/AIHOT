@@ -9,6 +9,7 @@ import { Podium } from "../features/leaderboard/Podium";
 import { IconInfo } from "../components/icons";
 import { modelHref, shortStamp } from "../features/leaderboard/format";
 import { useEntrance } from "../lib/hydration";
+import { useDomainNavigation } from "../components/shell/nav";
 
 const CATEGORY_KEYS = new Set(["coding", "reasoning", "knowledge", "professional"]);
 
@@ -51,6 +52,7 @@ export function headers() {
 }
 
 export default function LeaderboardPage() {
+  const { href } = useDomainNavigation();
   const { board, entries, run } = useLoaderData<typeof loader>();
   const entrance = useEntrance();
   return (
@@ -88,7 +90,7 @@ export default function LeaderboardPage() {
             如何看这张榜
           </h2>
           <p className="mt-2 text-[13px] leading-relaxed text-ink-3">{board.howToRead}价格不参与排名，缺测不记零分，指数不是正确率。</p>
-          <Link to="/leaderboard/rules" className="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-accent hover:text-accent-ink">
+          <Link to={href("/leaderboard/rules")} className="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-accent hover:text-accent-ink">
             了解计算方法 →
           </Link>
         </section>

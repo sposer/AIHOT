@@ -2,6 +2,7 @@ import { SITE, withSubject } from "@aihot/industry/site";
 import { Link, Outlet } from "react-router";
 import { BoardTabs } from "../features/leaderboard/BoardTabs";
 import { IconArrowUpRight } from "../components/icons";
+import { useDomainNavigation } from "../components/shell/nav";
 
 /** Shared caches may keep this page for five minutes. */
 export function headers() {
@@ -10,6 +11,7 @@ export function headers() {
 
 /** Shared frame for the overall and category boards; only the board below it changes. */
 export default function LeaderboardFrame() {
+  const { href } = useDomainNavigation();
   const chip = "inline-flex h-8 items-center gap-1 rounded-full border border-line-strong bg-surface px-3.5 text-[12.5px] text-ink-2 transition-colors hover:border-ink-4 hover:text-ink";
   return (
     <div className="pb-10">
@@ -19,10 +21,10 @@ export default function LeaderboardFrame() {
           <h1 className="mt-1.5 text-[24px] font-semibold leading-[1.3] text-ink">AI 模型排行榜</h1>
         </div>
         <div className="flex gap-2">
-          <Link to="/leaderboard/sources" className={chip}>
+          <Link to={href("/leaderboard/sources")} className={chip}>
             评测来源 <IconArrowUpRight size={13} />
           </Link>
-          <Link to="/leaderboard/rules" className={chip}>
+          <Link to={href("/leaderboard/rules")} className={chip}>
             排名怎么算 <IconArrowUpRight size={13} />
           </Link>
         </div>

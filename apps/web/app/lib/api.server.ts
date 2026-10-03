@@ -1,6 +1,6 @@
 // Server-side HTTP client for route loaders. The web process never touches the database;
 // SSR reads the api over loopback with keep-alive, one or two requests per page.
-import { data, redirect } from "react-router";
+import { data } from "react-router";
 
 const API_BASE = process.env.API_BASE_URL || "http://127.0.0.1:3001";
 
@@ -35,15 +35,14 @@ export async function apiGet<T>(path: string, init?: { signal?: AbortSignal; hea
   return (await res.json()) as T;
 }
 
-/** Maps API failures to route responses: real 404s, search-busy page, otherwise 503. */
-export async function loadOr404<T>(path: string, opts: { busyRedirect?: string; responseHeaders?: Headers; signal?: AbortSignal } = {}): Promise<T> {
+/** API failures stay at the requested URL and use the route's error boundary. */
+export async function loadOr404<T>(path: string, opts: { responseHeaders?: Headers; signal?: AbortSignal } = {}): Promise<T> {
   try {
     return await apiGet<T>(path, { responseHeaders: opts.responseHeaders, signal: opts.signal });
   } catch (error) {
     if (opts.signal?.aborted) throw error;
     if (error instanceof ApiError) {
       if (error.status === 404) throw data({ message: "not_found" }, { status: 404 });
-      if (error.status === 503 && opts.busyRedirect) throw redirect(opts.busyRedirect);
       if (error.status === 400) throw data({ message: "bad_request" }, { status: 400 });
     }
     throw data({ message: "unavailable" }, { status: 503 });

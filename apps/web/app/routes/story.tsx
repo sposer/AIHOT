@@ -6,10 +6,10 @@ import type { StoryDetail, StoryReportView } from "@aihot/contracts/site";
 import { isDomainKey } from "@aihot/contracts/taxonomy";
 import { data as routeData } from "react-router";
 import { queryString } from "../lib/api.server";
-import { DomainTabs, queryDomainHref } from "../features/feed/Filters";
 import { breadcrumbLd, listPath, pageMeta, titled } from "../lib/seo";
 import { beijingDate, beijingTime, monthDayTime, relativeTime, shortSourceName } from "../lib/format";
 import { HeatChart } from "../features/story/HeatChart";
+import { useDomainNavigation } from "../components/shell/nav";
 import { Badge, SelectedBadge } from "../components/ui/Badge";
 import { PillTabs } from "../components/ui/Tabs";
 import { Select } from "../components/ui/Controls";
@@ -121,6 +121,7 @@ function dayLabelOf(day: string): string {
 
 /** One report on the story timeline: time, source and marks, title, a summary that opens on demand. */
 function TimelineRow({ r }: { r: StoryReportView }) {
+  const { href } = useDomainNavigation();
   const [open, setOpen] = useState(false);
   const [clamped, setClamped] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
@@ -138,7 +139,7 @@ function TimelineRow({ r }: { r: StoryReportView }) {
           <span className="min-w-0 truncate">{r.source.name.replace(/（RSS）|（网页）|（API）/g, "")}</span>
           {r.selected && <SelectedBadge />}
         </div>
-        <Link to={`/items/${r.id}`} prefetch="intent" className="mt-1 block text-[16px] font-[650] leading-[1.6] text-ink transition-colors hover:text-accent lg:text-[15.5px]">
+        <Link to={href(`/items/${r.id}`)} prefetch="intent" className="mt-1 block text-[16px] font-[650] leading-[1.6] text-ink transition-colors hover:text-accent lg:text-[15.5px]">
           {r.title}
         </Link>
         {r.summary && (
@@ -161,8 +162,8 @@ function TimelineRow({ r }: { r: StoryReportView }) {
 type Filter = "all" | "official" | "selected";
 
 export default function StoryPage() {
+  const { href } = useDomainNavigation();
   const { story, domain } = useLoaderData<typeof loader>();
-  const scope = isDomainKey(domain) ? domain : "all";
   const [filter, setFilter] = useState<Filter>("all");
   const [order, setOrder] = useState<"desc" | "asc">("desc");
   const status = STATUS[story.status];
@@ -210,13 +211,6 @@ export default function StoryPage() {
         <span>事件详情</span>
       </nav>
 
-      <DomainTabs
-        scope={scope}
-        layoutId="story-domains"
-        label="事件领域"
-        getHref={(target, params) => queryDomainHref(`/story/${story.publicId}`, params, target)}
-        className="mb-5"
-      />
 
       <header className="max-w-[960px]">
         <div className="flex items-center gap-2 text-[12px] text-ink-4">
@@ -280,7 +274,7 @@ export default function StoryPage() {
                   {story.latestAt && <span className="num text-ink-4">{monthDayTime(story.latestAt)}</span>}
                 </div>
                 {newest ? (
-                  <Link to={`/items/${newest.id}`} className="group mt-1.5 inline text-[14px] leading-[1.7] text-ink-2 transition-colors hover:text-accent">
+                  <Link to={href(`/items/${newest.id}`)} className="group mt-1.5 inline text-[14px] leading-[1.7] text-ink-2 transition-colors hover:text-accent">
                     {story.latest}
                     <IconChevronRight size={14} className="ml-0.5 inline -translate-y-px text-ink-4 transition-transform group-hover:translate-x-0.5" />
                   </Link>
@@ -300,7 +294,7 @@ export default function StoryPage() {
                     <div className="num text-[12px] text-ink-4">
                       {monthDayTime(d.firstReportAt)} · {d.reportCount} 篇报道
                     </div>
-                    <Link to={`/items/${d.representative.id}`} className="mt-0.5 block text-[15px] font-semibold leading-snug text-ink transition-colors hover:text-accent">
+                    <Link to={href(`/items/${d.representative.id}`)} className="mt-0.5 block text-[15px] font-semibold leading-snug text-ink transition-colors hover:text-accent">
                       {d.title}
                     </Link>
                     <div className="mt-0.5 truncate text-[12.5px] text-ink-4">
@@ -408,7 +402,7 @@ export default function StoryPage() {
                 {story.officialReports.slice(0, 5).map((r) => (
                   <li key={r.id} className="py-3">
                     <div className="truncate text-[11.5px] text-ink-4">{r.source.name}</div>
-                    <Link to={`/items/${r.id}`} className="group mt-1 block text-[13.5px] font-semibold leading-[1.6] text-ink transition-colors hover:text-accent">
+                    <Link to={href(`/items/${r.id}`)} className="group mt-1 block text-[13.5px] font-semibold leading-[1.6] text-ink transition-colors hover:text-accent">
                       {r.title}
                       <IconChevronRight size={13} className="ml-0.5 inline -translate-y-px text-ink-4 transition-transform group-hover:translate-x-0.5" />
                     </Link>

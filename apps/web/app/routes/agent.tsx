@@ -10,6 +10,7 @@ import { CodeBlock, CopyButton } from "../components/CodeBlock";
 import { IconArrowUpRight, IconChevronRight } from "../components/icons";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
 import { PillTabs } from "../components/ui/Tabs";
+import { useDomainNavigation } from "../components/shell/nav";
 
 /** Shared caches may keep this page for five minutes. */
 export function headers() {
@@ -208,6 +209,7 @@ function ApiTab({ base }: { base: string }) {
 }
 
 export default function AgentPage() {
+  const { href } = useDomainNavigation();
   const { tab: initialTab, healthy, base } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -217,7 +219,7 @@ export default function AgentPage() {
 
   const select = (key: TabKey) => {
     setTab(key);
-    navigate(key === "mcp" ? "/agent" : `/agent?tab=${key}`, { replace: true, preventScrollReset: true });
+    navigate(href(key === "mcp" ? "/agent" : `/agent?tab=${key}`), { replace: true, preventScrollReset: true });
   };
 
   const pill = "inline-flex h-6 items-center rounded-mark border border-line bg-surface px-2 text-[11.5px] text-ink-3";
@@ -238,7 +240,7 @@ export default function AgentPage() {
       </AsideCard>
       <AsideCard title="没接上？">
         <p className="text-[13px] leading-[1.75] text-ink-3">把客户端、版本和报错写在反馈页，别发 token 或本地文件。</p>
-        <Link to="/feedback" prefetch="intent" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
+        <Link to={href("/feedback")} prefetch="intent" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
           去反馈 <IconChevronRight size={14} />
         </Link>
       </AsideCard>

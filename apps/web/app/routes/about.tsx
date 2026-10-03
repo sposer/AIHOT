@@ -9,6 +9,7 @@ import { Kicker } from "../components/ui/Kicker";
 import { buttonClass } from "../components/ui/Controls";
 import { IconArrowRight } from "../components/icons";
 import { SignalRiver, type RiverSource } from "../features/about/SignalRiver";
+import { useDomainNavigation } from "../components/shell/nav";
 
 /** Shared caches may keep this page for five minutes. */
 export function headers() {
@@ -137,6 +138,7 @@ function QrCard({ src, kind, title, note }: { src: string; kind: string; title: 
 
 /** The optional maker block (ABOUT.maker): a greeting on the left, the contact codes that are set on the right. */
 function Maker({ maker, contact }: { maker: NonNullable<typeof ABOUT.maker>; contact: ContactSettings }) {
+  const { href } = useDomainNavigation();
   const codes = [
     contact.wechatQr && maker.wechat ? <QrCard key="wechat" src={contact.wechatQr} kind="微信公众号" title={maker.wechat.title} note={maker.wechat.note} /> : null,
     contact.feishuQr && maker.feishu ? <QrCard key="feishu" src={contact.feishuQr} kind="飞书群" title={maker.feishu.title} note={maker.feishu.note} /> : null,
@@ -157,11 +159,11 @@ function Maker({ maker, contact }: { maker: NonNullable<typeof ABOUT.maker>; con
           ))}
           <p className="text-ink-3">
             它一直在改，改了什么都写在
-            <Link to="/changelog" className="text-accent hover:underline">
+            <Link to={href("/changelog")} className="text-accent hover:underline">
               更新日志
             </Link>
             里；有想法、遇到问题，去
-            <Link to="/feedback" className="text-accent hover:underline">
+            <Link to={href("/feedback")} className="text-accent hover:underline">
               反馈页
             </Link>
             告诉我。
@@ -180,9 +182,10 @@ function Maker({ maker, contact }: { maker: NonNullable<typeof ABOUT.maker>; con
 
 /** The latest 精选 under the river's paper; it moves on each time an item reaches the paper. */
 function Latest({ item, className = "" }: { item: SiteStats["latest"][number] | undefined; className?: string }) {
+  const { href } = useDomainNavigation();
   if (!item) return null;
   return (
-    <Link to={`/items/${item.id}`} prefetch="intent" className={`group block ${className}`}>
+    <Link to={href(`/items/${item.id}`)} prefetch="intent" className={`group block ${className}`}>
       <span className="text-[11px] font-semibold tracking-[0.2em] text-accent">最近精选</span>
       <span key={item.id} className="animate-fade-up mt-1.5 block">
         <span className="line-clamp-2 text-[13.5px] font-semibold leading-[1.55] text-ink transition-colors group-hover:text-accent">{item.title}</span>
@@ -193,6 +196,7 @@ function Latest({ item, className = "" }: { item: SiteStats["latest"][number] | 
 }
 
 export default function AboutPage() {
+  const { href } = useDomainNavigation();
   const { contact, stats } = useLoaderData<typeof loader>();
   const [focus, setFocus] = useState<number | null>(null);
   const [at, setAt] = useState(0);
@@ -228,10 +232,10 @@ export default function AboutPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 lg:pb-2">
-          <Link to="/" prefetch="intent" className={buttonClass("primary", "lg")}>
+          <Link to={href("/")} prefetch="intent" className={buttonClass("primary", "lg")}>
             看今天的精选 <IconArrowRight size={15} />
           </Link>
-          <Link to="/daily" prefetch="intent" className={buttonClass("secondary", "lg")}>
+          <Link to={href("/daily")} prefetch="intent" className={buttonClass("secondary", "lg")}>
             读最新{withSubject("日报")}
           </Link>
         </div>
@@ -273,7 +277,7 @@ export default function AboutPage() {
 
       <p className="mt-16 well rounded-card px-5 py-4 text-[13px] leading-[1.85] text-ink-3">
         {ABOUT.copyright}
-        <Link to="/feedback" className="text-accent hover:underline">
+        <Link to={href("/feedback")} className="text-accent hover:underline">
           反馈页
         </Link>
         联系我们。
@@ -282,10 +286,10 @@ export default function AboutPage() {
       <footer className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-[12.5px] text-ink-4">
         <span>{SITE.footerNote}</span>
         <nav className="flex gap-5" aria-label="规则与隐私">
-          <Link to="/terms" className="transition-colors hover:text-accent">
+          <Link to={href("/terms")} className="transition-colors hover:text-accent">
             使用规则
           </Link>
-          <Link to="/privacy" className="transition-colors hover:text-accent">
+          <Link to={href("/privacy")} className="transition-colors hover:text-accent">
             隐私说明
           </Link>
         </nav>

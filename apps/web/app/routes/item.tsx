@@ -7,6 +7,7 @@ import { loadOr404 } from "../lib/api.server";
 import { breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
 import { fullDateTime, relativeTime } from "../lib/format";
 import { markRead } from "../lib/local-state";
+import { useDomainNavigation } from "../components/shell/nav";
 import { SelectedBadge } from "../components/ui/Badge";
 import { ScoreLabel } from "../components/ui/Score";
 import { PillTabs } from "../components/ui/Tabs";
@@ -96,6 +97,7 @@ async function shareOrCopy(item: Pick<SiteItemDetail, "id" | "title">): Promise<
 }
 
 export default function ItemPage() {
+  const { href } = useDomainNavigation();
   const { item } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const hasTranslation = item.hasTranslation;
@@ -131,7 +133,7 @@ export default function ItemPage() {
 
   const back = () => {
     if (window.history.state?.idx > 0) navigate(-1);
-    else navigate(item.selected ? "/" : "/all");
+    else navigate(href(item.selected ? "/" : "/all"));
   };
   const backButton = (
     <button type="button" onClick={back} className="-ml-1.5 inline-flex h-8 items-center gap-1.5 rounded-full px-1.5 text-[14px] text-ink-2 transition-colors hover:text-ink lg:text-[13px] lg:text-ink-3">
@@ -235,7 +237,7 @@ export default function ItemPage() {
         <RailSection title="标签">
           <div className="flex flex-wrap gap-1.5">
             {item.tags.slice(0, 8).map((t) => (
-              <Link key={t} to={`/all?tag=${encodeURIComponent(t)}`} className="chip">
+              <Link key={t} to={href(`/all?tag=${encodeURIComponent(t)}`)} className="chip">
                 #{t}
               </Link>
             ))}
@@ -336,8 +338,8 @@ export default function ItemPage() {
                     label="正文语言"
                     active={lang}
                     items={[
-                      { key: "zh", label: "中文", prefetch: "intent", replace: true, to: `/items/${item.id}` },
-                      { key: "original", label: "原文", prefetch: "intent", replace: true, to: `/items/${item.id}/original` },
+                      { key: "zh", label: "中文", prefetch: "intent", replace: true, to: href(`/items/${item.id}`) },
+                      { key: "original", label: "原文", prefetch: "intent", replace: true, to: href(`/items/${item.id}/original`) },
                     ]}
                   />
                 )}
@@ -363,7 +365,7 @@ export default function ItemPage() {
           {item.tags.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-1.5 lg:hidden">
               {item.tags.slice(0, 6).map((t) => (
-                <Link key={t} to={`/all?tag=${encodeURIComponent(t)}`} className="chip">
+                <Link key={t} to={href(`/all?tag=${encodeURIComponent(t)}`)} className="chip">
                   #{t}
                 </Link>
               ))}
@@ -378,7 +380,7 @@ export default function ItemPage() {
               <ul className="divide-y divide-line-soft">
                 {related.map((s) => (
                   <li key={s.publicId}>
-                    <Link to={`/story/${s.publicId}`} className="block py-2.5 text-[14px] text-ink-2 hover:text-accent">
+                    <Link to={href(`/story/${s.publicId}`)} className="block py-2.5 text-[14px] text-ink-2 hover:text-accent">
                       {s.title}
                     </Link>
                   </li>

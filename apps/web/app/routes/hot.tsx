@@ -3,7 +3,6 @@ import type { Route } from "./+types/hot";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
 import { DOMAIN_KEYS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString } from "../lib/api.server";
-import { DomainTabs, queryDomainHref } from "../features/feed/Filters";
 import { listPath, pageMeta } from "../lib/seo";
 import { monthDayTime, shortSourceName } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
@@ -232,7 +231,6 @@ function Row({ e, domain }: { e: HotEntryView; domain: string | null }) {
 
 export default function HotPage() {
   const { hot, domain } = useLoaderData<typeof loader>();
-  const scope = isDomainKey(domain) ? domain : "all";
   const [lead, ...rest] = hot.entries;
   const runners = rest.slice(0, 2);
   const others = rest.slice(2);
@@ -258,14 +256,6 @@ export default function HotPage() {
           </p>
         )}
       </header>
-
-      <DomainTabs
-        scope={scope}
-        layoutId="hot-domains"
-        label="热点领域"
-        getHref={(target, params) => queryDomainHref("/hot", params, target)}
-        className="mb-5"
-      />
 
       {!lead ? (
         <div className="card rounded-sheet">

@@ -5,6 +5,7 @@ import { LB_CONFIDENCE_LABELS } from "@aihot/contracts/leaderboard";
 import { BrandMark } from "./BrandMark";
 import { EvidenceBadge } from "./Evidence";
 import { modelHref, yuan } from "./format";
+import { useDomainNavigation } from "../../components/shell/nav";
 
 type SortKey = "rank" | "released" | "coverage" | "cached" | "input" | "output";
 
@@ -62,6 +63,7 @@ function SortHeader({ k, children, sort, dir, onSort, align = "left", className 
 const unit = <span className="block text-[10.5px] font-normal text-ink-4">人民币 / 百万 Token</span>;
 
 export function BoardTable({ entries, board }: { entries: LbBoardEntry[]; board: string }) {
+  const { href } = useDomainNavigation();
   const [sort, setSort] = useState<SortKey>("rank");
   const [dir, setDir] = useState<1 | -1>(1);
   const rows = useMemo(() => sorted(entries, sort, dir), [entries, sort, dir]);
@@ -129,7 +131,7 @@ export function BoardTable({ entries, board }: { entries: LbBoardEntry[]; board:
               <Rank rank={e.rank} />
             </td>
             <td className="px-2 py-3 lg:px-3">
-              <Link to={modelHref(e.model.slug, board)} prefetch="intent" className="block after:absolute after:inset-0 after:content-['']">
+              <Link to={href(modelHref(e.model.slug, board))} prefetch="intent" className="block after:absolute after:inset-0 after:content-['']">
                 <span className="flex items-center gap-3">
                   <BrandMark brand={e.model.brand} size={32} />
                   <span className="min-w-0">

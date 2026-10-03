@@ -5,11 +5,10 @@ import type { PoolResponse } from "@aihot/contracts/site";
 import { DOMAIN_LABELS, isCategoryKey, isChannelKey, isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString } from "../lib/api.server";
 import { listPath, pageMeta } from "../lib/seo";
-import { ColumnTabs, DomainTabs, SearchField, hrefWith } from "../features/feed/Filters";
+import { ColumnTabs, SearchField } from "../features/feed/Filters";
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState } from "../components/ui/Page";
-import { RingMark } from "../components/Logo";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const domain = params.domain ?? null;
@@ -22,11 +21,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const tag = url.searchParams.get("tag")?.trim() || null;
   const q = url.searchParams.get("q")?.trim().slice(0, 200) || null;
   const tab = url.searchParams.get("tab") === "relevance" ? "relevance" : null;
-  // Legacy deep-paging parameters (deep, anchorAt) still open a normal page.
   const page = Math.min(Math.max(Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1, 1), 50);
   const data = await loadOr404<PoolResponse>(
     `/api/site/pool${queryString({ domain, channel: channel === "all" ? null : channel, category, tag, q, tab, page: page > 1 ? page : null })}`,
-    { signal: request.signal, busyRedirect: "/all/search-busy" },
+    { signal: request.signal },
   );
   return { data, base: domain ? `/all/${domain}` : "/all" };
 }
@@ -49,8 +47,6 @@ export function headers() {
 
 function pageHref(base: string, params: URLSearchParams, page: number) {
   const sp = new URLSearchParams(params);
-  sp.delete("deep");
-  sp.delete("anchorAt");
   sp.delete("search");
   if (page <= 1) sp.delete("page");
   else sp.set("page", String(page));
@@ -81,20 +77,13 @@ export default function AllPage() {
       {/* Desktop, as on 精选: the title, then one filter row with the search field aligned on the right. */}
       <div className="hidden lg:block">
         <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">{title ?? pageTitle}</h1>
-        <DomainTabs
-          scope={f.domain ?? "all"}
-          layoutId="all-domains-desk"
-          label="动态领域"
-          getHref={(scope, current) => hrefWith(scope === "all" ? "/all" : `/all/${scope}`, current, { domain: null })}
-          className="mt-4"
-        />
-        <div className="mb-5 mt-3 flex items-center justify-between gap-4">
+        <div className="mb-5 mt-4 flex items-center justify-between gap-4">
           <ColumnTabs base={base} filters={f} layoutId="all-cat-desk" className="min-w-0" />
           <SearchField action={base} variant="track" defaultValue={f.q ?? ""} keep={keep} />
         </div>
       </div>
 
-      {/* Phones: title, domain, search and the category/channel row. */}
+      {/* Phones: title, search and the domain's subcolumns. */}
       <div className="lg:hidden">
         <div className="flex items-baseline justify-between pb-3 pt-5">
           <h1 className="text-[22px] font-bold text-ink">{title ?? pageTitle}</h1>
@@ -103,14 +92,6 @@ export default function AllPage() {
               今日 <span className="num">{data.todayCount}</span> 条
             </span>
           )}
-        </div>
-        <div className="-mx-4 px-4">
-          <DomainTabs
-            scope={f.domain ?? "all"}
-            layoutId="all-domains-mobile"
-            label="动态领域"
-            getHref={(scope, current) => hrefWith(scope === "all" ? "/all" : `/all/${scope}`, current, { domain: null })}
-          />
         </div>
         <div className="mt-3">
           <SearchField action={base} variant="bar" defaultValue={f.q ?? ""} keep={keep} autoFocus={params.get("search") === "1"} />
@@ -157,20 +138,6 @@ export default function AllPage() {
       </div>
       <Pagination page={data.page} pageCount={data.pageCount} href={(p) => pageHref(base, params, p)} />
       {data.page >= 50 && <p className="mt-4 text-center text-[12px] text-ink-4">最多提供 50 页，更早的内容请使用搜索或主题页。</p>}
-    </div>
-  );
-}
-
-export function SearchBusy() {
-  return (
-    <div className="mx-auto max-w-sm py-24 text-center">
-      <RingMark className="mx-auto mb-5 size-10 text-accent" spinning />
-      <h1 className="text-[20px] font-bold text-ink">搜索有点忙</h1>
-      <p className="mt-2 text-[14px] leading-relaxed text-ink-3">现在搜索的人比较多，请稍等几秒再试。列表浏览不受影响。</p>
-      <div className="mt-6 flex justify-center gap-2.5">
-        <Link to="/all" className="inline-flex h-9 items-center rounded-full bg-accent px-4 text-[13.5px] font-medium text-accent-contrast hover:bg-accent-ink">浏览动态</Link>
-        <Link to="/" className="inline-flex h-9 items-center rounded-full border border-line-strong bg-surface px-4 text-[13.5px] text-ink-2 hover:border-ink-4">回到精选</Link>
-      </div>
     </div>
   );
 }

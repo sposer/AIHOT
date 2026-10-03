@@ -6,6 +6,7 @@ import { pageMeta } from "../lib/seo";
 import { exportBundle, importBundle, removeStar, useStarred, type ImportReport } from "../lib/local-state";
 import { fullDateTime, shortSourceName } from "../lib/format";
 import { IconBookmark, IconDownload, IconClose } from "../components/icons";
+import { useDomainNavigation } from "../components/shell/nav";
 
 /** Shared caches may keep this page for five minutes. */
 export function headers() {
@@ -26,6 +27,7 @@ function reportText(r: ImportReport): string {
 
 
 export default function StarredPage() {
+  const { href } = useDomainNavigation();
   const starred = useStarred();
   const [mounted, setMounted] = useState(false);
   const [availability, setAvailability] = useState<Record<string, string>>({});
@@ -99,7 +101,7 @@ export default function StarredPage() {
         <div className="mt-3 flex flex-col items-center rounded-card border border-dashed border-line-strong px-6 py-12 text-center">
           <IconBookmark size={20} className="text-ink-4" />
           <p className="mt-3 text-[13px] text-ink-3">还没有收藏内容。点开任意一条内容，在详情页点击收藏即可添加。</p>
-          <Link to="/" className="mt-4 text-[12.5px] font-medium text-accent hover:text-accent-ink">
+          <Link to={href("/")} className="mt-4 text-[12.5px] font-medium text-accent hover:text-accent-ink">
             去看精选 →
           </Link>
         </div>
@@ -124,7 +126,7 @@ export default function StarredPage() {
                   {unavailable ? (
                     s.title
                   ) : (
-                    <Link to={`/items/${s.id}`} className="transition-colors after:absolute after:inset-0 after:content-[''] hover:text-accent">
+                    <Link to={href(`/items/${s.id}`)} className="transition-colors after:absolute after:inset-0 after:content-[''] hover:text-accent">
                       {s.title}
                     </Link>
                   )}

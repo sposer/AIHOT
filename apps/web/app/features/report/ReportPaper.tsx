@@ -13,6 +13,7 @@ import { shortSourceName } from "../../lib/format";
 import { Badge } from "../../components/ui/Badge";
 import { IconArrowLeft, IconArrowRight, IconArrowUpRight } from "../../components/icons";
 import { Kicker } from "../../components/ui/Kicker";
+import { useDomainNavigation } from "../../components/shell/nav";
 import { SourceAvatar } from "../../components/ui/SourceAvatar";
 import { Halftone } from "./Halftone";
 import { Nameplate } from "./Nameplate";
@@ -98,6 +99,7 @@ function Original({ c, className = "" }: { c: ReportCitation; className?: string
 
 /** One story: source, headline, at most four lines of summary, and the original at the foot. */
 function Story({ c, dated, className = "" }: { c: ReportCitation; dated: boolean; className?: string }) {
+  const { href } = useDomainNavigation();
   return (
     <article id={anchorOf(c) ?? undefined} className={`flex min-w-0 scroll-mt-6 flex-col py-6 ${className}`}>
       <div className="flex items-center gap-2 text-[12px] text-ink-3">
@@ -108,7 +110,7 @@ function Story({ c, dated, className = "" }: { c: ReportCitation; dated: boolean
         <>
           <h3 className="mt-3 text-[19px] font-bold leading-[1.5] tracking-[-0.01em] text-ink [overflow-wrap:anywhere] [text-wrap:pretty] @[880px]:text-[20px]">
             {c.itemId ? (
-              <Link to={`/items/${c.itemId}`} prefetch="intent" className="transition-colors hover:text-accent">
+              <Link to={href(`/items/${c.itemId}`)} prefetch="intent" className="transition-colors hover:text-accent">
                 {c.title}
               </Link>
             ) : (
@@ -204,6 +206,7 @@ function LeadPicture({ cover, onError, priority = false, className = "" }: { cov
 
 /** The front page: the lead beside a column of today's highlights and the index of pages. */
 function FrontPage({ report, pages, leadStory, count }: { report: ReportDetail; pages: Page[]; leadStory: ReportCitation | null; count: number }) {
+  const { href } = useDomainNavigation();
   const daily = report.kind === "daily";
   // A picture that fails to load is dropped, and the lead is set as if it had none.
   const [broken, setBroken] = useState<string | null>(null);
@@ -224,7 +227,7 @@ function FrontPage({ report, pages, leadStory, count }: { report: ReportDetail; 
         {cover && wide && <LeadPicture cover={cover} onError={() => setBroken(cover.url)} priority className="mt-5" />}
         <h2 className="mt-4 text-[32px] font-black leading-[1.28] tracking-[-0.03em] text-ink [text-wrap:balance] @[520px]:text-[40px] @[1040px]:text-[48px] @[1040px]:leading-[1.22]">
           {leadStory?.itemId ? (
-            <Link to={`/items/${leadStory.itemId}`} prefetch="intent" className="transition-colors hover:text-accent">
+            <Link to={href(`/items/${leadStory.itemId}`)} prefetch="intent" className="transition-colors hover:text-accent">
               {title}
             </Link>
           ) : (
@@ -358,6 +361,7 @@ function History({ report, index }: { report: ReportDetail; index: ReportNavigat
 }
 
 export function ReportPaper({ report, index }: { report: ReportDetail; index: ReportNavigationEntry[] }) {
+  const { href } = useDomainNavigation();
   const daily = report.kind === "daily";
   const leadStory = leadStoryOf(report);
   const pages = pagesOf(report, leadStory);
@@ -391,7 +395,7 @@ export function ReportPaper({ report, index }: { report: ReportDetail; index: Re
                 <span className="mt-[9px] size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
                 <span className="min-w-0">
                   {f.itemId ? (
-                    <Link to={`/items/${f.itemId}`} className="text-ink transition-colors hover:text-accent">
+                    <Link to={href(`/items/${f.itemId}`)} className="text-ink transition-colors hover:text-accent">
                       {f.title}
                     </Link>
                   ) : (

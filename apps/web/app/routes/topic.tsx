@@ -6,7 +6,6 @@ import { isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString } from "../lib/api.server";
 import { breadcrumbLd, listPath, pageMeta, titled } from "../lib/seo";
 import { DayList, Pagination } from "../features/feed/DayList";
-import { DomainTabs, queryDomainHref } from "../features/feed/Filters";
 import { EmptyState, MoreLink } from "../components/ui/Page";
 
 /** Selected items of a topic: shared caches keep the page as long as its api answer (one minute). */
@@ -74,14 +73,6 @@ export default function TopicPage() {
           )}
         </div>
       </header>
-      <DomainTabs
-        scope={scope}
-        layoutId="topic-domains"
-        label="主题领域"
-        getHref={(target, params) => queryDomainHref(`/topics/${topic.slug}`, params, target)}
-        className="mb-5"
-      />
-
       <div className="mb-1 mt-2 flex items-baseline justify-between">
         <h2 className="text-[18px] font-bold text-ink">最新精选</h2>
         {items.length > 0 && (

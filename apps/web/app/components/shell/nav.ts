@@ -2,6 +2,9 @@
 import { withSubject } from "@aihot/industry/site";
 import { FEATURES } from "@aihot/industry/features";
 import type { ReactNode } from "react";
+import { useLocation } from "react-router";
+import { domainHref, domainScope } from "@aihot/contracts/http-policy";
+import { useDomainPreference } from "../../lib/local-state";
 import {
   IconApps, IconBolt, IconBookmark, IconChart, IconDoc, IconFlame, IconGrid, IconHeart, IconHistory, IconList, IconMessage, IconPlug,
 } from "../icons";
@@ -66,4 +69,16 @@ export function tabIsActive(item: NavItem, pathname: string): boolean {
   if (item.to === "/more") return MORE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (item.to === "/daily") return /^\/(daily|weekly|monthly)(\/|$)/.test(pathname);
   return pathname === item.to || pathname.startsWith(`${item.to}/`);
+}
+
+/** URL-scoped views keep their scope; unscoped navigation uses the browser preference. */
+export function useDomainNavigation() {
+  const location = useLocation();
+  const preference = useDomainPreference();
+  const scope = domainScope(location.pathname, new URLSearchParams(location.search)) ?? preference ?? "all";
+  const href = (to: string) => {
+    const [pathname, query] = to.split("?");
+    return domainHref(pathname, scope, new URLSearchParams(query));
+  };
+  return { scope, href };
 }

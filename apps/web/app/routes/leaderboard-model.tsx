@@ -11,6 +11,7 @@ import { BrandMark } from "../features/leaderboard/BrandMark";
 import { EvidenceBadge } from "../features/leaderboard/Evidence";
 import { boardHref, listPrice, pctFixed, shortStamp, tokensWan, yuan } from "../features/leaderboard/format";
 import { IconArrowLeft, IconArrowRight, IconArrowUpRight, IconChevronDown, IconExternal } from "../components/icons";
+import { useDomainNavigation } from "../components/shell/nav";
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   return loadOr404<LbModelDetail>(`/api/site/leaderboard/models/${encodeURIComponent(params.slug)}`, { signal: request.signal });
@@ -72,6 +73,7 @@ function Stat({ label, children, foot }: { label: string; children: ReactNode; f
 }
 
 function Capability({ d, from }: { d: LbModelDetail; from: string }) {
+  const { href } = useDomainNavigation();
   return (
     <section className="mt-12">
       <SectionHead eyebrow="CAPABILITY PROFILE" title="各有所长，看得更清楚。" sub="每项能力单独计算。没有足够的实测，就留空。" />
@@ -79,7 +81,7 @@ function Capability({ d, from }: { d: LbModelDetail; from: string }) {
         {d.categories.map((c) => (
           <Link
             key={c.key}
-            to={boardHref(c.key)}
+            to={href(boardHref(c.key))}
             className={`card card-hover group flex h-full flex-col rounded-card p-4 lg:p-[22px] ${c.key === from ? "border-accent/45" : ""}`}
           >
             <span className="flex items-center justify-between gap-2">
@@ -166,6 +168,7 @@ function Comparisons({ d }: { d: LbModelDetail }) {
 }
 
 function ComparisonRow({ c, name }: { c: LbComparison; name: string }) {
+  const { href } = useDomainNavigation();
   const [open, setOpen] = useState(false);
   const favours = c.net > 1e-9 ? "共同证据支持本模型" : c.net < -1e-9 ? "共同证据支持对方" : "共同证据持平";
   return (
@@ -197,7 +200,7 @@ function ComparisonRow({ c, name }: { c: LbComparison; name: string }) {
               <tbody>
                 {c.rows.map((r) => (
                   <tr key={r.sourceKey} className="border-b border-line last:border-0">
-                    <td className="py-2 pr-2"><Link to={`/leaderboard/sources/${r.sourceKey}`} className="text-ink-2 hover:text-accent">{r.sourceName}</Link></td>
+                    <td className="py-2 pr-2"><Link to={href(`/leaderboard/sources/${r.sourceKey}`)} className="text-ink-2 hover:text-accent">{r.sourceName}</Link></td>
                     <td className="num py-2 text-right text-ink">{r.mine}</td>
                     <td className="num py-2 text-right text-ink-2">{r.theirs}</td>
                     <td className="num py-2 text-right text-ink-4">{pctFixed(r.weight)}</td>
@@ -207,7 +210,7 @@ function ComparisonRow({ c, name }: { c: LbComparison; name: string }) {
             </table>
           </div>
           {c.hasPage && (
-            <Link to={`/leaderboard/${c.model.slug}`} className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-medium text-accent">
+            <Link to={href(`/leaderboard/${c.model.slug}`)} className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-medium text-accent">
               查看 {c.model.name} 的完整证据 <IconArrowRight size={13} />
             </Link>
           )}
@@ -218,6 +221,7 @@ function ComparisonRow({ c, name }: { c: LbComparison; name: string }) {
 }
 
 function EvidenceCard({ it }: { it: LbEvidenceItem }) {
+  const { href } = useDomainNavigation();
   const [open, setOpen] = useState(false);
   return (
     <li className="card overflow-hidden rounded-tile">
@@ -267,7 +271,7 @@ function EvidenceCard({ it }: { it: LbEvidenceItem }) {
             </div>
           )}
           <div className="flex gap-4 sm:col-span-2">
-            <Link to={`/leaderboard/sources/${it.sourceKey}`} className="inline-flex items-center gap-1 font-medium text-accent">查看这项评测 <IconArrowRight size={13} /></Link>
+            <Link to={href(`/leaderboard/sources/${it.sourceKey}`)} className="inline-flex items-center gap-1 font-medium text-accent">查看这项评测 <IconArrowRight size={13} /></Link>
             {it.officialUrl && (
               <a href={it.officialUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-ink-3 hover:text-accent">官方来源 <IconExternal size={12} /></a>
             )}
@@ -279,6 +283,7 @@ function EvidenceCard({ it }: { it: LbEvidenceItem }) {
 }
 
 export default function LeaderboardModelPage() {
+  const { href } = useDomainNavigation();
   const d = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
   // The server page is shared by every ?from= (a CDN caches it once), so the board to return
@@ -290,7 +295,7 @@ export default function LeaderboardModelPage() {
   const withScores = d.categories.filter((c) => c.score !== null).length;
   return (
     <div className="pb-12">
-      <Link to={boardHref(from)} className="mt-4 inline-flex items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent lg:mt-0">
+      <Link to={href(boardHref(from))} className="mt-4 inline-flex items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent lg:mt-0">
         <IconArrowLeft size={14} /> 返回{LEADERBOARD_BOARD_LABELS[from as keyof typeof LEADERBOARD_BOARD_LABELS]}榜
       </Link>
 
@@ -376,7 +381,7 @@ export default function LeaderboardModelPage() {
             <p className="mt-1 text-[12.5px] text-ink-3">这些评测没有公开该模型的成绩，缺测不记零分。</p>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               {d.unmeasured.map((u) => (
-                <Link key={u.key} to={`/leaderboard/sources/${u.key}`} className="chip">
+                <Link key={u.key} to={href(`/leaderboard/sources/${u.key}`)} className="chip">
                   {u.name}
                 </Link>
               ))}
@@ -388,7 +393,7 @@ export default function LeaderboardModelPage() {
       <section className="mt-10 border-t border-line pt-6">
         <h2 className="text-[15px] font-semibold text-ink">还有一些未知</h2>
         <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">缺失的评测不会记成零分。模型的名次会随新证据变化，分数相近时不宜过度解读细小差距。</p>
-        <Link to="/leaderboard/rules" className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:text-accent-ink">
+        <Link to={href("/leaderboard/rules")} className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:text-accent-ink">
           了解计算方法 →
         </Link>
       </section>

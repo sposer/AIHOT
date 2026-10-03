@@ -7,6 +7,7 @@ import { KEYS } from "../lib/local-state";
 import { IconCheck, IconClose, IconImage } from "../components/icons";
 import { RingMark } from "../components/Logo";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
+import { useDomainNavigation } from "../components/shell/nav";
 
 /** Shared caches may keep this page for five minutes. */
 export function headers() {
@@ -69,6 +70,7 @@ const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_TEXT = 2000;
 
 export default function FeedbackPage() {
+  const { href } = useDomainNavigation();
   const [params] = useSearchParams();
   const [draft, setDraft] = useState<Draft>({ content: "", email: "", pageUrl: params.get("from") ?? "" });
   const [shot, setShot] = useState<{ file: File; url: string } | null>(null);
@@ -141,7 +143,7 @@ export default function FeedbackPage() {
           <p className="mt-2 text-[14px] text-ink-3">
             反馈编号 <span className="mono font-semibold text-ink">#{state.id}</span>，需要回复时我们会引用这个编号。
           </p>
-          <Link to="/" className="mt-8 inline-flex h-10 items-center rounded-full bg-ink px-6 text-[14px] font-medium text-bg transition-opacity hover:opacity-90">
+          <Link to={href("/")} className="mt-8 inline-flex h-10 items-center rounded-full bg-ink px-6 text-[14px] font-medium text-bg transition-opacity hover:opacity-90">
             回到精选
           </Link>
         </div>
@@ -247,7 +249,7 @@ export default function FeedbackPage() {
         <div className="flex flex-col-reverse gap-4 border-t border-line-soft bg-bg-sunk/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:bg-bg-muted/30">
           <p className="text-[12px] leading-relaxed text-ink-4 sm:max-w-[400px]">
             请勿提交密钥、身份证件或与问题无关的敏感信息。提交即表示你知悉反馈内容、选填邮箱、页面信息和截图将按
-            <Link to="/privacy" className="text-accent hover:underline">
+            <Link to={href("/privacy")} className="text-accent hover:underline">
               隐私说明
             </Link>
             处理。

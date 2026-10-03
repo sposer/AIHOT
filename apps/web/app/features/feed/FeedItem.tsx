@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { IntentLink } from "../../components/ui/IntentLink";
 import type { GroupInfo, FeedItemSummary, TimelineFilters } from "@aihot/contracts/site";
 import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
+import { useDomainNavigation } from "../../components/shell/nav";
 import { SelectedBadge } from "../../components/ui/Badge";
 import { ScoreLabel } from "../../components/ui/Score";
 import { MediaThumbs, SourceLine, StarButton } from "./parts";
@@ -22,6 +23,7 @@ export interface FeedItemProps {
 }
 
 export const FeedItem = memo(function FeedItem({ item, group, filters, read = false, onOpen, showTags = false }: FeedItemProps) {
+  const { href } = useDomainNavigation();
   const isX = item.channel === "x" && !!item.x;
   const open = () => onOpen?.(item.id);
   const showSources = !!group && (group.additionalSourceCount > 0 || (group.developmentCount <= 1 && group.reportCount > 1));
@@ -52,14 +54,14 @@ export const FeedItem = memo(function FeedItem({ item, group, filters, read = fa
 
       {isX ? (
         <p className={`mt-2 whitespace-pre-line text-[15px] leading-[1.75] line-clamp-5 lg:line-clamp-4 ${read ? "text-ink-4" : "text-ink"}`}>
-          <IntentLink to={`/items/${item.id}`} onClick={open} className="after:absolute after:inset-0 after:content-['']">
+          <IntentLink to={href(`/items/${item.id}`)} onClick={open} className="after:absolute after:inset-0 after:content-['']">
             {item.summary ?? item.title}
           </IntentLink>
         </p>
       ) : (
         <>
           <h3 className={`mt-2 line-clamp-2 text-[17px] font-bold leading-[1.55] lg:line-clamp-none lg:font-[650] ${read ? "text-ink-4" : "text-ink"}`}>
-            <IntentLink to={`/items/${item.id}`} onClick={open} className="after:absolute after:inset-0 after:content-['']">
+            <IntentLink to={href(`/items/${item.id}`)} onClick={open} className="after:absolute after:inset-0 after:content-['']">
               {item.title}
             </IntentLink>
           </h3>
@@ -73,12 +75,12 @@ export const FeedItem = memo(function FeedItem({ item, group, filters, read = fa
       {(tags.length > 0 || (showTags && item.category)) && (
         <div className="relative z-10 mt-2 hidden flex-wrap gap-x-2.5 gap-y-1 text-[12px] text-ink-4 lg:flex">
           {showTags && item.category && (
-            <Link to={`/all?category=${item.category}`} className="hover:text-accent">
+            <Link to={href(`/all?category=${item.category}`)} className="hover:text-accent">
               {CATEGORY_LABELS[item.category]}
             </Link>
           )}
           {tags.map((t) => (
-            <Link key={t} to={`/all?tag=${encodeURIComponent(t)}`} className="hover:text-accent">
+            <Link key={t} to={href(`/all?tag=${encodeURIComponent(t)}`)} className="hover:text-accent">
               #{t}
             </Link>
           ))}

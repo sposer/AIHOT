@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { Wordmark } from "../Logo";
 import { useChangelogSeen } from "../../lib/local-state";
-import { SIDEBAR, tabIsActive, type NavItem } from "./nav";
+import { SIDEBAR, tabIsActive, useDomainNavigation, type NavItem } from "./nav";
+import { DomainSwitcher } from "./DomainSwitcher";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 /** True while the changelog has an entry newer than the one this reader last opened. */
@@ -15,14 +16,14 @@ export function useChangelogDot(latestVersion: string | null): boolean {
   return !seen || seen < latestVersion;
 }
 
-function SideLink({ item, dot }: { item: NavItem; dot: boolean }) {
+function SideLink({ item, dot, to }: { item: NavItem; dot: boolean; to: string }) {
   const { pathname } = useLocation();
   // Weekly and monthly reports belong to the daily report entry, as the phone tab bar has it.
   const isActive = tabIsActive(item, pathname);
   const Icon = item.icon;
   return (
     <Link
-      to={item.to}
+      to={to}
       prefetch="intent"
       aria-current={isActive ? "page" : undefined}
       className={`flex h-10 items-center gap-2.5 rounded-control px-2.5 text-[14px] transition-colors duration-150 ${
@@ -40,18 +41,20 @@ function SideLink({ item, dot }: { item: NavItem; dot: boolean }) {
 
 export function Sidebar({ changelogVersion }: { changelogVersion: string | null }) {
   const dot = useChangelogDot(changelogVersion);
+  const { href } = useDomainNavigation();
   return (
     <aside className="sticky top-0 hidden h-dvh w-[180px] shrink-0 flex-col border-r border-line bg-sidebar px-3 pb-3.5 pt-6 lg:flex">
-      <Link to="/" className="mb-4 flex h-[50px] items-center px-1 text-ink" aria-label={`${SITE.name} 首页`}>
+      <Link to={href("/")} className="mb-4 flex h-[50px] items-center px-1 text-ink" aria-label={`${SITE.name} 首页`}>
         <Wordmark size={24} />
       </Link>
+      <DomainSwitcher sidebar />
       <nav className="-mx-1 flex-1 overflow-y-auto px-1" aria-label="主导航">
         {SIDEBAR.map((section) => (
           <div key={section.title}>
             <div className="px-2.5 pb-1 pt-3.5 text-[11px] text-ink-4">{section.title}</div>
             <div className="flex flex-col gap-1">
               {section.items.map((item) => (
-                <SideLink key={item.to} item={item} dot={dot} />
+                <SideLink key={item.to} item={item} dot={dot} to={href(item.to)} />
               ))}
             </div>
           </div>

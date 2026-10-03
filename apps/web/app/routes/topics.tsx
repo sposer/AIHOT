@@ -3,7 +3,6 @@ import type { TopicSummary } from "@aihot/contracts/site";
 import { DOMAIN_KEYS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString } from "../lib/api.server";
 import { listPath, pageMeta } from "../lib/seo";
-import { DomainTabs, queryDomainHref } from "../features/feed/Filters";
 
 export async function loader({ request }: { request: Request }) {
   const domain = new URL(request.url).searchParams.get("domain");
@@ -45,13 +44,6 @@ export default function TopicsPage() {
         <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">主题</h1>
         <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">按机构与主体、专业方向、内容形态浏览主题动态</p>
       </header>
-      <DomainTabs
-        scope={scope}
-        layoutId="topics-domains"
-        label="主题领域"
-        getHref={(target, params) => queryDomainHref("/topics", params, target)}
-        className="mt-4"
-      />
       {GROUPS.map((g) => (
         <section key={g.key} aria-labelledby={`topics-${g.key}`} className="pt-8">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">

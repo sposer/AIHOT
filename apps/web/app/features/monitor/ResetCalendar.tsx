@@ -4,6 +4,7 @@ import { addDays } from "@aihot/contracts/time";
 import { IconChevronRight } from "../../components/icons";
 import { PostCard } from "./PostCard";
 import { bjDate, dayWord, durationText, monthDay, stamp, windowText } from "./format";
+import { useDomainNavigation } from "../../components/shell/nav";
 
 // Day cells as on the original monitor: a faint plain day, green for landed resets, a dashed green edge
 // on white for "should have landed", warm sand for announced ones; the label chip repeats the tone.
@@ -54,6 +55,7 @@ function statusChip(e: CodexResetEvent, now: number) {
 }
 
 export function ResetCalendar({ marks, events, today, historyFrom, now, avatar, selectedDate, version }: { selectedDate: string; version: string; marks: CodexCalendarMark[]; events: CodexResetEvent[]; today: string; historyFrom: string | null; now: number; avatar: string | null }) {
+  const { href } = useDomainNavigation();
   const latest = useMemo(() => [...marks].sort((a, b) => (a.date < b.date ? 1 : -1))[0]?.date ?? today, [marks, today]);
   const initial = selectedDate;
   const [selected, setSelected] = useState(initial);
@@ -119,7 +121,7 @@ export function ResetCalendar({ marks, events, today, historyFrom, now, avatar, 
       </h2>
       <p className="mt-1 text-[12.5px] text-ink-3">点日期查看当天的重置、发卡和 Tibo 原帖。</p>
 
-      <noscript><nav aria-label="历史重置记录">{[...new Set(marks.map((m) => m.date))].sort().reverse().map((d) => <a key={d} href={`/codex-reset/history/${d}`} className="mr-3 inline-block">{d}</a>)}</nav></noscript>
+      <noscript><nav aria-label="历史重置记录">{[...new Set(marks.map((m) => m.date))].sort().reverse().map((d) => <a key={d} href={href(`/codex-reset/history/${d}`)} className="mr-3 inline-block">{d}</a>)}</nav></noscript>
       <div className="mt-4 overflow-hidden rounded-card border border-line-strong bg-surface lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,1fr)] xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,1fr)]">
         <div className="px-3 py-[18px] sm:p-6">
           <div className="flex items-center justify-between gap-3">
@@ -174,7 +176,7 @@ export function ResetCalendar({ marks, events, today, historyFrom, now, avatar, 
                 return (
                   <a
                     key={d}
-                    href={`/codex-reset/history/${d}` }
+                    href={href(`/codex-reset/history/${d}`)}
                     role="gridcell"
                     data-day={d}
                     tabIndex={isSel ? 0 : -1}
@@ -227,7 +229,7 @@ export function ResetCalendar({ marks, events, today, historyFrom, now, avatar, 
           <p className="sr-only">
             已选择 {selected}，{selectedMarks.length} 条记录。
           </p>
-          {selectedMarks.length > 0 && !daysLoaded[selected] && <p className="text-[13px] text-ink-3">{failed ? <a href={`/codex-reset/history/${selected}`} className="text-accent">重新读取当天记录</a> : "正在读取当天记录…"}</p>}
+          {selectedMarks.length > 0 && !daysLoaded[selected] && <p className="text-[13px] text-ink-3">{failed ? <a href={href(`/codex-reset/history/${selected}`)} className="text-accent">重新读取当天记录</a> : "正在读取当天记录…"}</p>}
           {selectedMarks.map((m, i) => {
             const e = eventById.get(m.eventId);
             if (!e) return null;

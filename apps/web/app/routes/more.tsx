@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { pageMeta } from "../lib/seo";
 import { ThemeSwitch } from "../components/shell/ThemeSwitch";
+import { useDomainNavigation } from "../components/shell/nav";
 import { IconBookmark, IconChart, IconChevronRight, IconFlame, IconGrid, IconHeart, IconHistory, IconMessage, IconMoon, IconPlug } from "../components/icons";
 
 /** Shared caches may keep this page for five minutes. */
@@ -54,6 +55,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function MorePage() {
+  const { href } = useDomainNavigation();
   return (
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-8">
       <h1 className="pb-4 pt-5 text-[22px] font-bold text-ink lg:pt-1">更多</h1>
@@ -62,7 +64,7 @@ export default function MorePage() {
           <Group key={g.title} title={g.title}>
             {g.rows.map((r) => (
               <li key={r.to}>
-                <Link to={r.to} className="flex h-[50px] items-center gap-3 px-4 text-[15px] font-medium text-ink transition-colors active:bg-bg-sunk lg:hover:bg-bg-sunk">
+                <Link to={href(r.to)} className="flex h-[50px] items-center gap-3 px-4 text-[15px] font-medium text-ink transition-colors active:bg-bg-sunk lg:hover:bg-bg-sunk">
                   <span className="text-ink-3">{r.icon}</span>
                   <span className="flex-1">{r.label}</span>
                   <IconChevronRight size={16} className="text-ink-4" />
@@ -82,8 +84,8 @@ export default function MorePage() {
         ))}
       </div>
       <div className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[12px] text-ink-4">
-        <Link to="/terms" className="hover:text-ink-2">使用规则</Link>
-        <Link to="/privacy" className="hover:text-ink-2">隐私说明</Link>
+        <Link to={href("/terms")} className="hover:text-ink-2">使用规则</Link>
+        <Link to={href("/privacy")} className="hover:text-ink-2">隐私说明</Link>
         <a href="/feed.xml" className="hover:text-ink-2">RSS</a>
         {SITE.icp && <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="hover:text-ink-2">{SITE.icp}</a>}
       </div>

@@ -7,6 +7,7 @@ import { BrandMark } from "../features/leaderboard/BrandMark";
 import { StatusChip } from "../features/leaderboard/StatusChip";
 import { pct } from "../features/leaderboard/format";
 import { IconArrowLeft, IconArrowUpRight } from "../components/icons";
+import { useDomainNavigation } from "../components/shell/nav";
 
 export async function loader({ request }: { request: Request }) {
   return loadOr404<LbSourcesResponse>("/api/site/leaderboard/sources", { signal: request.signal });
@@ -30,10 +31,11 @@ export function headers() {
 }
 
 export default function LeaderboardSourcesPage() {
+  const { href } = useDomainNavigation();
   const { groups, rankedCount, totalCount } = useLoaderData<typeof loader>();
   return (
     <div className="pb-12">
-      <Link to="/leaderboard" className="mt-4 inline-flex items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent lg:mt-0">
+      <Link to={href("/leaderboard")} className="mt-4 inline-flex items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent lg:mt-0">
         <IconArrowLeft size={14} /> 返回模型榜
       </Link>
       <header className="pb-2 pt-3">
@@ -50,7 +52,7 @@ export default function LeaderboardSourcesPage() {
               <span className="text-[12px] text-ink-4">已审查来源与专项</span>
             </span>
           </div>
-          <Link to="/leaderboard/rules" className="inline-flex items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-accent">
+          <Link to={href("/leaderboard/rules")} className="inline-flex items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-accent">
             排名怎么算 <IconArrowUpRight size={14} />
           </Link>
         </div>
@@ -78,7 +80,7 @@ export default function LeaderboardSourcesPage() {
           <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {g.sources.map((s) => (
               <li key={s.key}>
-                <Link to={`/leaderboard/sources/${s.key}`} className="card card-hover group flex h-full flex-col p-5">
+                <Link to={href(`/leaderboard/sources/${s.key}`)} className="card card-hover group flex h-full flex-col p-5">
                   <span className="flex items-start justify-between gap-3">
                     <BrandMark brand={s.brand} size={30} />
                     <StatusChip status={s.status} />

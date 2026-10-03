@@ -1,7 +1,7 @@
 import { titled } from "./lib/seo";
 import { SITE } from "@aihot/industry/site";
 import {
-  isRouteErrorResponse, Link, Links, Meta, Outlet, Scripts, ScrollRestoration, useLoaderData, useLocation, useNavigation, useRouteError, useRouteLoaderData,
+  isRouteErrorResponse, Link, Links, Meta, Outlet, Scripts, ScrollRestoration, useLoaderData, useLocation, useNavigation, useRevalidator, useRouteError, useRouteLoaderData,
   type ShouldRevalidateFunction,
 } from "react-router";
 import type { ReactNode } from "react";
@@ -10,8 +10,10 @@ import "./app.css";
 import { Sidebar } from "./components/shell/Sidebar";
 import { MobileTabBar } from "./components/shell/MobileTabBar";
 import { BackToTop, NavigationProgress } from "./components/shell/Chrome";
-import { RingMark } from "./components/Logo";
-import { buttonClass } from "./components/ui/Controls";
+import { RingMark, Wordmark } from "./components/Logo";
+import { DomainSwitcher } from "./components/shell/DomainSwitcher";
+import { useDomainNavigation } from "./components/shell/nav";
+import { Button, buttonClass } from "./components/ui/Controls";
 import { THEME_BOOT_SCRIPT } from "./lib/local-state";
 import { apiGet } from "./lib/api.server";
 import { useHydratedFlag } from "./lib/hydration";
@@ -69,6 +71,7 @@ export function meta({ error }: Route.MetaArgs) {
 /** Sidebar, main column and phone tab bar around a page (or an error). */
 function SiteShell({ changelogVersion, children }: { changelogVersion: string | null; children: ReactNode }) {
   const navigation = useNavigation();
+  const { href } = useDomainNavigation();
   return (
     <div className="flex min-h-dvh">
       <NavigationProgress active={navigation.state === "loading"} />
@@ -79,7 +82,13 @@ function SiteShell({ changelogVersion, children }: { changelogVersion: string | 
       {/* Mobile shell (≤ 960px): one centred column, the tab bar below. Desktop: the page fills the main area
           up to the list width (--page-max-wide), centred beyond it. */}
       <main id="main" className="min-w-0 flex-1 pb-[calc(72px+env(safe-area-inset-bottom))] lg:px-7 lg:pb-[72px] lg:pt-6">
-        <div className="mx-auto w-full max-w-[640px] px-4 lg:max-w-[var(--page-max-wide)] lg:px-0">{children}</div>
+        <div className="mx-auto w-full max-w-[640px] px-4 lg:max-w-[var(--page-max-wide)] lg:px-0">
+          <div className="flex h-14 items-center justify-between lg:hidden">
+            <Link to={href("/")} aria-label={`${SITE.name} 首页`}><Wordmark size={20} className="text-ink" /></Link>
+            <DomainSwitcher />
+          </div>
+          {children}
+        </div>
       </main>
       <MobileTabBar changelogVersion={changelogVersion} />
       <BackToTop />
@@ -102,7 +111,10 @@ export default function App() {
 
 export function ErrorBoundary() {
   const error = useRouteError();
+  // decision: retry loaders in place; not reload the document because the current URL and shell already own recovery.
+  const revalidator = useRevalidator();
   const site = useRouteLoaderData<typeof loader>("root");
+  const { href } = useDomainNavigation();
   const { pathname } = useLocation();
   const status = isRouteErrorResponse(error) ? error.status : 500;
   const notFound = status === 404;
@@ -113,13 +125,18 @@ export function ErrorBoundary() {
         <div className="mono text-[12px] text-ink-4">{status}</div>
         <h1 className="mt-1.5 text-[20px] font-bold text-ink">{notFound ? "这里没有内容" : "暂时无法加载"}</h1>
         <p className="mt-2 text-[13.5px] leading-relaxed text-ink-3">
-          {notFound ? "你访问的页面不存在，或内容已不再公开。" : "服务暂时繁忙，请稍后再试。已经加载过的内容不受影响。"}
+          {notFound ? "你访问的页面不存在，或内容已不再公开。" : "暂时无法获取内容，请重试或浏览其他页面。"}
         </p>
-        <div className="mt-6 flex justify-center gap-2.5">
-          <Link to="/" className={buttonClass("primary")}>
+        <div className="mt-6 flex flex-wrap justify-center gap-2.5">
+          {!notFound && (
+            <Button variant="primary" onClick={() => revalidator.revalidate()} disabled={revalidator.state === "loading"}>
+              {revalidator.state === "loading" ? "重试中" : "重试"}
+            </Button>
+          )}
+          <Link to={href("/")} className={buttonClass(notFound ? "primary" : "secondary")}>
             回到精选
           </Link>
-          <Link to="/all" className={buttonClass("secondary")}>
+          <Link to={href("/all")} className={buttonClass("secondary")}>
             浏览全部动态
           </Link>
         </div>

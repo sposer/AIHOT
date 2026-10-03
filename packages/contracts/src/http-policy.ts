@@ -1,6 +1,7 @@
 // Outward HTTP behaviour, defined once: CORS, cache lifetimes, redirects and which process owns a path.
 // The API server and the web server both read this module.
-import type { ReportKind, ReportScope } from "./site.ts";
+import { isReportScope, type ReportKind, type ReportScope } from "./site.ts";
+import { feedColumns, isDomainKey } from "./taxonomy.ts";
 
 /** Report identity is kind/scope/key; the latest overview omits its all scope in the page path. */
 // decision: 共用报告路径生成器；not 网页与各公开出口分别拼接 because 日期详情必须在所有出口指向同一个范围身份。
@@ -11,6 +12,61 @@ export function reportPath(kind: ReportKind, scope: ReportScope, key?: string): 
 
 export function reportArchivePath(scope: ReportScope): string {
   return `${reportPath("daily", scope)}/archive`;
+}
+
+/** The URL owns content scope; other public pages may carry it as navigation context. */
+export function domainScope(pathname: string, params: URLSearchParams): ReportScope | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] === "all") return isDomainKey(parts[1]) ? parts[1] : "all";
+  if (["daily", "weekly", "monthly"].includes(parts[0])) return isReportScope(parts[1]) ? parts[1] : "all";
+  const query = params.get("domain");
+  if (isReportScope(query)) return query;
+  if (pathname === "/" || ["hot", "story", "topics"].includes(parts[0])) return "all";
+  return null;
+}
+
+/** One path owner for sidebar, phone navigation and links that leave scoped content. */
+export function domainHref(pathname: string, scope: ReportScope, params = new URLSearchParams()): string {
+  const sp = new URLSearchParams(params);
+  const parts = pathname.split("/").filter(Boolean);
+  let path = pathname;
+  sp.delete("domain");
+  if (parts[0] === "all") {
+    path = scope === "all" ? "/all" : `/all/${scope}`;
+  } else if (["daily", "weekly", "monthly"].includes(parts[0])) {
+    const kind = parts[0] as ReportKind;
+    const key = parts.length === 3 && parts[2] !== "archive" ? parts[2] : undefined;
+    path = parts.includes("archive") ? reportArchivePath(scope) : reportPath(kind, scope, key);
+  } else if (pathname === "/" || ["hot", "story", "topics"].includes(parts[0])) {
+    if (scope !== "all") sp.set("domain", scope);
+  } else {
+    // Global objects and information pages keep their identity, not a filtered copy of their data.
+    sp.set("domain", scope);
+  }
+  const query = sp.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+/** Change the current view's scope without carrying paging or unsupported subcolumns across it. */
+export function switchDomainHref(pathname: string, params: URLSearchParams, scope: ReportScope): string {
+  if (domainScope(pathname, params) === scope) {
+    const query = params.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }
+  const sp = new URLSearchParams(params);
+  const columns = feedColumns(scope === "all" ? null : scope);
+  const feed = pathname === "/" || /^\/all(?:\/[^/]+)?$/.test(pathname);
+  // decision: clean only navigation to a new domain; not rewrite incoming filters because direct URLs remain valid API queries, even without a matching presentation preset.
+  for (const key of ["category", "tag", "channel"] as const) {
+    const value = sp.get(key);
+    if (!feed || (scope !== "all" && value && !columns.some(({ filters }) => filters[key] === value))) sp.delete(key);
+  }
+  for (const key of ["page", "cursor", "search"]) sp.delete(key);
+  let path = pathname.replace(/\/page\/\d+$/, "");
+  // Report domain switches open that domain's latest issue, as the report navigation does.
+  const kind = /^\/(daily|weekly|monthly)\/[^/]+\/[^/]+$/.exec(path)?.[1] as ReportKind | undefined;
+  if (kind && !path.endsWith("/archive")) path = `/${kind}`;
+  return domainHref(path, scope, sp);
 }
 
 /** CORS for /api/v1/* and /openapi-v1.json. */

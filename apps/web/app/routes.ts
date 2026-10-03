@@ -4,8 +4,6 @@ export default [
   index("routes/home.tsx"),
   route("all", "routes/all.tsx"),
   route("all/:domain", "routes/all.tsx", { id: "all-domain" }),
-  route("all/search-busy", "routes/search-busy.tsx", { id: "all-search-busy" }),
-  route("search-busy", "routes/search-busy.tsx", { id: "search-busy" }),
   route("items/:id", "routes/item.tsx"),
   route("items/:id/original", "routes/item-original.tsx", { id: "item-original" }),
   route("hot", "routes/hot.tsx"),

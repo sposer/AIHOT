@@ -9,6 +9,7 @@ import { pct } from "../features/leaderboard/format";
 import { fullDateTime } from "../lib/format";
 import { IconArrowLeft, IconChevronRight } from "../components/icons";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
+import { useDomainNavigation } from "../components/shell/nav";
 
 interface RulesData {
   run: LbRunInfo;
@@ -122,6 +123,7 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 }
 
 export default function LeaderboardRulesPage() {
+  const { href } = useDomainNavigation();
   const { run, budgets, anchors } = useLoaderData<typeof loader>();
   const aside = (
     <>
@@ -152,7 +154,7 @@ export default function LeaderboardRulesPage() {
             ["/leaderboard", "模型榜"],
             ["/leaderboard/sources", "每一份评测证据"],
           ].map(([to, label]) => (
-            <Link key={to} to={to!} prefetch="intent" className="flex items-center justify-between rounded-control px-2 py-2 text-[13.5px] text-ink-2 transition-colors hover:bg-bg-sunk hover:text-ink">
+            <Link key={to} to={href(to!)} prefetch="intent" className="flex items-center justify-between rounded-control px-2 py-2 text-[13.5px] text-ink-2 transition-colors hover:bg-bg-sunk hover:text-ink">
               {label}
               <IconChevronRight size={14} className="text-ink-4" />
             </Link>
@@ -163,7 +165,7 @@ export default function LeaderboardRulesPage() {
   );
   return (
     <ReadingLayout aside={aside}>
-      <Link to="/leaderboard" className="inline-flex items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent">
+      <Link to={href("/leaderboard")} className="inline-flex items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent">
         <IconArrowLeft size={14} /> 返回模型榜
       </Link>
 
@@ -245,7 +247,7 @@ export default function LeaderboardRulesPage() {
         </Disclosure>
       </section>
 
-      <Link to="/leaderboard/sources" className="mt-8 inline-flex items-center gap-1 text-[13.5px] font-medium text-accent hover:text-accent-ink">
+      <Link to={href("/leaderboard/sources")} className="mt-8 inline-flex items-center gap-1 text-[13.5px] font-medium text-accent hover:text-accent-ink">
         查看每一份评测证据 →
       </Link>
     </ReadingLayout>

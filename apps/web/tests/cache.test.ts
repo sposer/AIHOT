@@ -25,6 +25,11 @@ const reportKeys: Record<ReportKind, string[]> = {
   weekly: ["2026-W39", "2026-W38", "2026-W37", "2026-W36"],
   monthly: ["2026-09", "2026-08", "2026-07", "2026-06"],
 };
+const feedItem = {
+  id: "medical-item", title: "Clinical research", summary: "Public summary", reason: null,
+  source: { name: "Source" }, publishedAt: "2026-09-28T00:00:00Z", timelineAt: "2026-09-28T00:00:00Z",
+  category: "paper", domains: ["medical"], tags: ["临床研究", "药品"], score: 90, selected: true, channel: "news", x: null,
+};
 const api = createServer((req, res) => {
   const url = new URL(req.url!, "http://api.local");
   apiUrls.push(url.pathname + url.search);
@@ -38,13 +43,18 @@ const api = createServer((req, res) => {
     const filters = { domain: url.searchParams.get("domain"), channel: url.searchParams.get("channel") ?? "all", category: url.searchParams.get("category"), tag: url.searchParams.get("tag"), topic: null };
     res.setHeader("X-Accel-Expires", `@${deadline}`);
     res.setHeader("Cache-Control", "public, max-age=30, s-maxage=30");
-    return res.end(JSON.stringify({ filters, cards: [], nextCursor: null, refreshAt, dayCounts: [], hot: null, generatedAt: "2026-09-28T00:00:00Z" }));
+    const scoped = filters.domain === "medical";
+    return res.end(JSON.stringify({ filters, cards: scoped ? [{ key: "medical-item", anchorAt: feedItem.timelineAt, item: feedItem, group: null }] : [], nextCursor: null, refreshAt, dayCounts: [], hot: scoped ? [{ rank: 1, domains: ["medical"], title: "Clinical story", heat: 20, trend: "flat", storyPublicId: "scoped-story", itemId: null, participants: [], participantCount: 0 }] : null, generatedAt: "2026-09-28T00:00:00Z" }));
   }
   if (url.pathname === "/api/site/pool") {
+    if (url.searchParams.get("q") === "unavailable") {
+      res.statusCode = 503;
+      return res.end(JSON.stringify({ code: "temporarily_unavailable" }));
+    }
     const domain = url.searchParams.get("domain");
     return res.end(JSON.stringify({
       filters: { domain, channel: url.searchParams.get("channel") ?? "all", category: url.searchParams.get("category"), tag: url.searchParams.get("tag"), q: url.searchParams.get("q"), tab: "time" },
-      items: [], page: Number(url.searchParams.get("page") ?? 1), pageCount: 3, total: 0, todayCount: 0, freshness: "2026-09-28T00:00:00Z", generatedAt: "2026-09-28T00:00:00Z",
+      items: domain === "medical" ? [feedItem] : [], page: Number(url.searchParams.get("page") ?? 1), pageCount: 3, total: 0, todayCount: 0, freshness: "2026-09-28T00:00:00Z", generatedAt: "2026-09-28T00:00:00Z",
     }));
   }
   const reportRoute = /^\/api\/site\/reports\/(daily|weekly|monthly)(?:\/|$)/.exec(url.pathname);
@@ -84,6 +94,12 @@ const api = createServer((req, res) => {
   }));
   if (url.pathname === "/api/site/echo-client") return res.end(JSON.stringify({ forwarded: req.headers["x-forwarded-for"], real: req.headers["x-real-ip"] }));
   if (url.pathname === "/api/site/items/long-lived") return res.end(JSON.stringify({ id: "long-lived", title: "t" }));
+  if (url.pathname === "/api/site/items/medical-item") return res.end(JSON.stringify({
+    ...feedItem, revision: 1, originalTitle: null, source: { id: "source", name: "Source", kind: "rss", firstParty: true, iconUrl: null },
+    links: { aihot: "/items/medical-item", original: "https://example.org/medical" }, discoveredAt: feedItem.timelineAt,
+    readingMode: "summary-only", author: null, language: "zh", body: null, outline: [], relatedStories: [{ publicId: "scoped-story", title: "Clinical story" }],
+    indexable: true, markdownAvailable: false, group: null, story: null, hasTranslation: false, bodyLanguage: "zh",
+  }));
   if (url.pathname === "/api/site/contact") return res.end(JSON.stringify({ wechatQr: "/qr.png", feishuQr: "/qr.png" }));
   if (url.pathname === "/api/site/stories/merged") {
     res.statusCode = 308;
@@ -163,6 +179,15 @@ test("HTML and navigation share freshness; cookies do not personalize public res
 });
 
 test("missing routes cannot be hidden by a root-only request; errors and redirects stay uncached", async () => {
+  const path = "/all/medical?q=unavailable&tag=%E4%B8%B4%E5%BA%8A%E7%A0%94%E7%A9%B6&channel=firstParty";
+  const unavailable = await fetch(origin + path);
+  assert.equal(unavailable.status, 503);
+  assert.equal(new URL(unavailable.url).pathname + new URL(unavailable.url).search, path);
+  assert.equal(unavailable.headers.get("Location"), null);
+  assert.equal(unavailable.headers.get("Cache-Control"), "private, no-store");
+  const page = load(await unavailable.text());
+  assert.ok(page("main button:not([aria-haspopup])").length > 0);
+  assert.ok(page("nav[aria-label='主导航'] a[href='/all/medical']").length > 0);
   for (const pathname of ["/items/missing.data?_routes=root", "/does-not-exist.data?_routes=root", "/items/missing"]) {
     const res = await fetch(origin + pathname);
     assert.equal(res.status, 404, pathname);
@@ -371,11 +396,11 @@ test("domain pages and editions retain their scope through SSR, navigation and c
 });
 
 
-test("domain navigation preserves query context and forwards hot, story and topic scope", async () => {
+test("scoped shell and content links forward hot, story and topic scope", async () => {
   const paths = [
     "/all/medical?q=clinical&category=paper&channel=news&tag=clinical&page=3&cursor=old",
     "/hot?domain=medical", "/story/scoped-story?domain=medical", "/topics?domain=medical",
-    "/topics/scoped-topic/page/2?domain=medical",
+    "/topics/scoped-topic/page/2?domain=medical", "/?domain=medical", "/items/medical-item?domain=medical",
   ];
   apiUrls.length = 0;
   const pages = [];
@@ -384,21 +409,33 @@ test("domain navigation preserves query context and forwards hot, story and topi
     assert.equal(res.status, 200, path);
     pages.push(load(await res.text()));
   }
-  const [all, hot, story, topics, topic] = pages;
+  const [all, hot, story, topics, topic, selected, item] = pages;
   assert.equal(hot!("title").text(), "热点 · MyHOT");
   assert.equal(hot!("h1").first().text().trim(), "热点");
-  const switchUrl = new URL(all!("nav[aria-label='动态领域'] a[href^='/all/legal']").first().attr("href")!, origin);
-  assert.equal(switchUrl.pathname, "/all/legal");
-  for (const [key, value] of Object.entries({ q: "clinical", category: "paper", channel: "news", tag: "clinical" })) assert.equal(switchUrl.searchParams.get(key), value);
-  assert.equal(switchUrl.searchParams.has("page"), false);
-  assert.equal(switchUrl.searchParams.has("cursor"), false);
+  for (const page of pages) {
+    const nav = page("nav[aria-label='主导航']");
+    assert.ok(nav.find("a[href='/all/medical']").length > 0);
+    assert.ok(nav.find("a[href='/hot?domain=medical']").length > 0);
+    assert.ok(nav.find("a[href='/daily/medical']").length > 0);
+    assert.ok(page("nav[aria-label='底部导航'] a[href='/more?domain=medical']").length > 0);
+  }
+  const canonical = new URL(all!("link[rel='canonical']").attr("href")!);
+  assert.equal(canonical.pathname, "/all/medical");
+  assert.equal(canonical.searchParams.get("tag"), "clinical");
   assert.ok(hot!("a[href='/story/scoped-story?domain=medical']").length > 0);
   assert.ok(story!("a[href='/hot?domain=medical']").length > 0);
   assert.ok(story!("a[href='/story/related-story?domain=medical']").length > 0);
   assert.ok(topics!("a[href='/topics/scoped-topic?domain=medical']").length > 0);
   assert.ok(topic!("nav[aria-label='分页'] a[href='/topics/scoped-topic?domain=medical']").length > 0);
   assert.ok(topic!("a[href='/topics/related-topic?domain=medical']").length > 0);
-  assert.ok(topic!("nav[aria-label='主题领域'] a[href='/topics/scoped-topic?domain=ai']").length > 0);
+  for (const page of [selected!, all!]) assert.ok(page("a[href='/items/medical-item?domain=medical']").length > 0);
+  assert.ok(selected!("a[href='/story/scoped-story?domain=medical']").length > 0);
+  assert.ok(all!("a[href='/all/medical?tag=%E8%8D%AF%E5%93%81']").length > 0);
+  assert.ok(item!("a[href='/all/medical?tag=%E8%8D%AF%E5%93%81']").length > 0);
+  assert.ok(item!("a[href='/story/scoped-story?domain=medical']").length > 0);
+  assert.equal(new URL(item!("link[rel='canonical']").attr("href")!).pathname, "/items/medical-item");
+  assert.equal(new URL(item!("link[rel='canonical']").attr("href")!).search, "");
+  assert.ok(apiUrls.includes("/api/site/items/medical-item"));
   for (const path of ["/api/site/hot", "/api/site/stories/scoped-story", "/api/site/topics", "/api/site/topics/scoped-topic"]) {
     assert.ok(apiUrls.some((value) => {
       const u = new URL(value, "http://api.local");
@@ -418,15 +455,11 @@ test("daily archive stays available in desktop and phone navigation with empty o
       const res = await fetch(origin + "/daily/medical");
       assert.equal(res.status, 200);
       const $ = load(await res.text());
-      const phone = $("nav[aria-label='报告领域']").parents(".lg\\:hidden").first();
+      const kinds = $("nav[aria-label='切换日报、周报、月报']");
+      const phone = kinds.parents(".lg\\:hidden").first();
       assert.equal(phone.find("a[href='/daily/medical/archive']").length, 1);
-      const desktop = $("nav[aria-label='报告领域']").closest("aside");
+      const desktop = kinds.closest("aside");
       assert.equal(desktop.find("a[href='/daily/medical/archive']").length, 1);
-      for (const nav of $("nav[aria-label='报告领域']").toArray()) {
-        assert.ok($(nav).find("a[href='/daily']").length > 0);
-        assert.ok($(nav).find("a[href='/daily/policy']").length > 0);
-        assert.equal($(nav).find("a[href*='2026-09']").length, 0);
-      }
     }
   } finally {
     reportIndexLimit = null;

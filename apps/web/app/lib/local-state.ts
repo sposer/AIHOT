@@ -1,11 +1,13 @@
 // Reader state kept only in this browser; nothing about a reader leaves it. Storage failures degrade
 // silently. Keep the keys and formats once readers have data under them.
 import { useSyncExternalStore } from "react";
+import { isReportScope, type ReportScope } from "@aihot/contracts/site";
 
 export const KEYS = {
   starred: "aihot-starred-items",
   read: "aihot-read-items",
   theme: "aihot-theme",
+  domain: "aihot-domain",
   changelogSeen: "aihot-changelog-seen-version",
   feedbackDraft: "aihot-feedback-draft-v1",
 } as const;
@@ -86,6 +88,7 @@ function subscribeKey(key: string) {
 const subscribeStarred = subscribeKey(KEYS.starred);
 const subscribeRead = subscribeKey(KEYS.read);
 const subscribeTheme = subscribeKey(KEYS.theme);
+const subscribeDomain = subscribeKey(KEYS.domain);
 const subscribeChangelog = subscribeKey(KEYS.changelogSeen);
 
 // Snapshot cache so useSyncExternalStore gets stable references between changes.
@@ -218,6 +221,17 @@ export function resolvedTheme(pref: ThemePreference = getThemePreference()): "li
 /** Inline script run before paint so the first frame already has the reader's theme. */
 export const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem('${KEYS.theme}');if(t==='"light"'||t==='"dark"')t=JSON.parse(t);if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();`;
 
+// --- navigation domain ---
+export function getDomainPreference(): ReportScope | null {
+  const value = readRaw(KEYS.domain);
+  return isReportScope(value) ? value : null;
+}
+
+export function setDomainPreference(scope: ReportScope) {
+  writeRaw(KEYS.domain, scope);
+  invalidate(KEYS.domain);
+}
+
 // --- changelog red dot ---
 export function getChangelogSeen(): string | null {
   const v = readRaw(KEYS.changelogSeen);
@@ -329,6 +343,10 @@ export function useReadSet(): Set<string> {
 
 export function useThemePreference(): ThemePreference {
   return useSyncExternalStore(subscribeTheme, getThemePreference, () => null);
+}
+
+export function useDomainPreference(): ReportScope | null {
+  return useSyncExternalStore(subscribeDomain, getDomainPreference, () => null);
 }
 
 export function useChangelogSeen(): string | null {

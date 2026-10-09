@@ -16,6 +16,12 @@ export function Menu({ trigger, label, children, align = "right", triggerClassNa
     const onDown = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    // decision: dismiss on confirmed outside focus; not blur because WebKit blurs internal links before click.
+    // Window blur is a separate departure, not an element's null-relatedTarget blur.
+    const onFocus = (e: FocusEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onWindowBlur = () => setOpen(false);
     const items = entries();
     (items.find((item) => item.getAttribute("aria-checked") === "true") ?? items[0])?.focus();
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -25,10 +31,14 @@ export function Menu({ trigger, label, children, align = "right", triggerClassNa
       }
     };
     document.addEventListener("pointerdown", onDown);
+    document.addEventListener("focusin", onFocus);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onWindowBlur);
     return () => {
       document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("focusin", onFocus);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onWindowBlur);
     };
   }, [open]);
   const onKeyDown = (event: KeyboardEvent) => {
@@ -52,9 +62,7 @@ export function Menu({ trigger, label, children, align = "right", triggerClassNa
     items[index]?.focus();
   };
   return (
-    <div ref={ref} className="relative" onKeyDown={onKeyDown} onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-    }}>
+    <div ref={ref} className="relative" onKeyDown={onKeyDown}>
       <button
         ref={buttonRef}
         type="button"

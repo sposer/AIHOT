@@ -93,7 +93,9 @@ npm run typecheck
 createdb myhot_test
 DATABASE_URL=postgres://127.0.0.1:5432/myhot_test node scripts/migrate.ts
 DATABASE_URL=postgres://127.0.0.1:5432/myhot_test npm test
-npm run build -w @aihot/web && node --test apps/web/tests/*.test.ts
+npm run build -w @aihot/web
+npx playwright install chromium webkit
+node --test apps/web/tests/*.test.ts
 ```
 
 测试不访问任何外部服务：模型和付费接口都由本地假服务回答。

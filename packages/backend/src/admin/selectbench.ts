@@ -194,7 +194,7 @@ export async function listSelectBenchRuns() {
     FROM selectbench_runs r ORDER BY r.created_at DESC LIMIT 100`;
 }
 
-export async function selectBenchRun(id: string, f: { domain?: DomainKey; model?: string; outcome?: string; stratum?: string; disagree?: boolean }) {
+export async function selectBenchRun(id: string, f: { domain?: DomainKey; model?: string; outcome?: string; stratum?: string | null; disagree?: boolean }) {
   const [run] = await sql`SELECT * FROM selectbench_runs WHERE id = ${id}`;
   if (!run) return null;
   const outcome = f.outcome ?? null;
@@ -202,7 +202,7 @@ export async function selectBenchRun(id: string, f: { domain?: DomainKey; model?
   const rows = await sql`
     SELECT case_id, min(title) AS title, min(stratum) AS stratum, min(gold) AS gold, min(domains) AS domains,
            jsonb_object_agg(model, jsonb_build_object('decision', decision, 'score', score, 'relevance', relevance, 'category', category, 'reason', reason, 'error', error, 'receiptId', receipt_id)) AS by_model
-    FROM selectbench_results WHERE run_id = ${id} AND (${f.stratum ?? null}::text IS NULL OR stratum = ${f.stratum ?? null})
+    FROM selectbench_results WHERE run_id = ${id} AND (${f.stratum === undefined} OR stratum IS NOT DISTINCT FROM ${f.stratum ?? null}::text)
       AND (${f.domain ?? null}::text IS NULL OR domains @> ARRAY[${f.domain ?? null}]::text[])
     GROUP BY case_id
     HAVING (${outcome}::text IS NULL OR bool_or(
@@ -220,5 +220,7 @@ export async function selectBenchRun(id: string, f: { domain?: DomainKey; model?
     SELECT stratum, count(DISTINCT case_id)::int AS n FROM selectbench_results
     WHERE run_id = ${id} AND (${f.domain ?? null}::text IS NULL OR domains @> ARRAY[${f.domain ?? null}]::text[])
     GROUP BY 1 ORDER BY 2 DESC`;
-  return { run, rows, strata, domain: f.domain ?? null };
+  // decision: return the parsed filter identity with its rows; not reparse URL text in the page
+  // because equivalent JSON literals must select the same stratum.
+  return { run, rows, strata, domain: f.domain ?? null, stratum: f.stratum };
 }

@@ -111,6 +111,7 @@ test("SelectBench admin import persists human domains and uses them with outcome
   };
   const all = await get();
   assert.equal(all.domain, null);
+  assert.equal(all.stratum, undefined);
   assert.equal(all.rows.length, 8);
   assert.deepEqual(all.rows.find((c) => c.case_id === "unlabelled")!.domains, []);
   const expected = summarizeSelectBench(CASES);
@@ -128,12 +129,35 @@ test("SelectBench admin import persists human domains and uses them with outcome
   assert.deepEqual((await get({ domain: "medical", model: "primary", outcome: "fp" })).rows.map((r) => r.case_id), ["fp"]);
   assert.equal((await get({ domain: "medical", model: "other", outcome: "fp" })).rows.length, 0);
   assert.deepEqual((await get({ domain: "medical", model: "other", outcome: "fn" })).rows.map((r) => r.case_id).sort(), ["fn", "multi"]);
-  assert.deepEqual((await get({ domain: "medical", stratum: "clinical", disagree: "1" })).rows.map((r) => r.case_id), ["fp", "multi"]);
+  assert.deepEqual((await get({ domain: "medical", stratum: JSON.stringify("clinical"), disagree: "1" })).rows.map((r) => r.case_id), ["fp", "multi"]);
+  assert.deepEqual((await get({ stratum: "null" })).rows.map((r) => r.case_id).sort(), ["either-error", "error", "policy-tn", "unlabelled"]);
+  assert.deepEqual((await get({ domain: "legal", outcome: "error", stratum: "null" })).rows.map((r) => r.case_id).sort(), ["either-error", "error"]);
+  const emptyStratum = await get({ domain: "medical", stratum: "null" });
+  assert.equal(emptyStratum.stratum, null);
+  assert.equal(emptyStratum.rows.length, 0);
+  for (const [wire, parsed] of [[" null ", null], ['"cl\\u0069nical"', "clinical"]] as const) {
+    const filtered = await get({ stratum: wire });
+    assert.equal(filtered.stratum, parsed);
+    assert.deepEqual(filtered.rows.map((r) => r.case_id), (await get({ stratum: JSON.stringify(parsed) })).rows.map((r) => r.case_id));
+  }
   assert.deepEqual((await get({ domain: "legal", outcome: "either" })).rows.map((r) => r.case_id), ["either"]);
   assert.deepEqual((await get({ domain: "legal", outcome: "error" })).rows.map((r) => r.case_id).sort(), ["either-error", "error"]);
   assert.equal((await get({ domain: "military" })).rows.length, 0);
   const badFilter = await app.inject({ method: "GET", url: `/api/admin/selectbench/${runId}?domain=all`, headers });
   assert.equal(badFilter.statusCode, 400);
+  for (const stratum of ["", "clinical", "1", "false", "{}", "[]"]) {
+    assert.equal((await app.inject({ method: "GET", url: `/api/admin/selectbench/${runId}?${new URLSearchParams({ stratum })}`, headers })).statusCode, 400);
+  }
+  const strataCases: SelectBenchCase[] = [null, "", "null", "clinical"].map((stratum, i) => ({ caseId: `stratum-${i}`, title: `Stratum case ${i}`, stratum, gold: "select", domains: ["medical"], decision: "select" }));
+  const strataRun = await importSelectBenchRun({ models: { primary: { summary: {}, cases: strataCases } } }, "Nullable strata", `admin:${user!.id}`);
+  const nullable = async (stratum?: string | null) => {
+    const query = stratum === undefined ? "" : `?${new URLSearchParams({ stratum: JSON.stringify(stratum) })}`;
+    const response = await app.inject({ method: "GET", url: `/api/admin/selectbench/${strataRun.id}${query}`, headers });
+    assert.equal(response.statusCode, 200);
+    return response.json<NonNullable<Awaited<ReturnType<typeof selectBenchRun>>>>();
+  };
+  assert.equal((await nullable()).rows.length, 4);
+  for (const c of strataCases) assert.deepEqual((await nullable(c.stratum)).rows.map((r) => r.case_id), [c.caseId]);
   t.diagnostic(`saved 8 unique cases across 2 models; medical subset n=${medical.run.summary.primary.byDomain.medical.n}, decisive=${medical.run.summary.primary.byDomain.medical.decisive}; all filters kept complete labels`);
 });
 

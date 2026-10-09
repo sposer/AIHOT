@@ -61,6 +61,7 @@ interface Data {
   rows: Array<{ case_id: string; title: string; stratum: string | null; gold: "select" | "reject" | "either"; domains: DomainKey[]; by_model: Record<string, Decision> }>;
   strata: Array<{ stratum: string | null; n: number }>;
   domain: DomainKey | null;
+  stratum?: string | null;
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -99,6 +100,8 @@ export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) 
   const summary = (m: string) => domain ? d.run.summary[m]?.byDomain?.[domain] : d.run.summary[m];
   const current = summary(model);
   const sweep = current?.sweep ?? [];
+  const strata = d.stratum !== undefined && !d.strata.some((s) => s.stratum === d.stratum)
+    ? [...d.strata, { stratum: d.stratum, n: 0 }] : d.strata;
   const set = (k: string, v: string | null) => {
     const next = new URLSearchParams(sp);
     if (v) next.set(k, v);
@@ -149,9 +152,9 @@ export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) 
             { value: "error", label: "失败" },
           ]}
         />
-        <Select className="!w-auto" aria-label="样本分层" value={sp.get("stratum") ?? ""} onChange={(e) => set("stratum", e.target.value || null)}>
+        <Select className="!w-auto" aria-label="样本分层" value={d.stratum === undefined ? "" : JSON.stringify(d.stratum)} onChange={(e) => set("stratum", e.target.value || null)}>
           <option value="">全部分层</option>
-          {d.strata.map((s) => <option key={s.stratum ?? "none"} value={s.stratum ?? ""}>{s.stratum ?? "未分层"}（{s.n}）</option>)}
+          {strata.map((s) => <option key={JSON.stringify(s.stratum)} value={JSON.stringify(s.stratum)}>{s.stratum === "" ? "空分层名" : s.stratum ?? "未分层"}（{s.n}）</option>)}
         </Select>
         <label className="inline-flex items-center gap-2 text-[13px] text-ink-2">
           <input type="checkbox" className="size-4 accent-[var(--accent)]" checked={sp.get("disagree") === "1"} onChange={(e) => set("disagree", e.target.checked ? "1" : null)} />

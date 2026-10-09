@@ -6,7 +6,8 @@ import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { SITE } from "@aihot/industry/site";
 import { FEATURES } from "@aihot/industry/features";
-import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
+import { CATEGORY_KEYS, DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
+import { REPORT_SCOPES } from "@aihot/contracts/site";
 import { REPO_ROOT, config } from "@aihot/backend/config";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
 import { sitemapXml } from "@aihot/backend/publication/sitemap";
@@ -86,7 +87,7 @@ function manifest() {
   };
 }
 
-/** The OpenAPI document with this deployment's name, address and categories. */
+/** The OpenAPI document with this deployment's name, address and taxonomy. */
 let openApi: string | null = null;
 async function openApiJson(): Promise<string> {
   if (openApi) return openApi;
@@ -95,11 +96,16 @@ async function openApiJson(): Promise<string> {
     .replaceAll("{{siteUrl}}", config.siteUrl)
     .replaceAll("{{categoryList}}", CATEGORY_KEYS.join(", "));
   const doc = JSON.parse(raw) as { paths: Record<string, unknown>; components?: { parameters?: Record<string, { schema?: { enum?: string[] } }> } };
-  // Categories follow the industry pack.
+  // The specification template and all validators use the same industry identities.
   const walk = (node: unknown) => {
     if (!node || typeof node !== "object") return;
     const o = node as Record<string, unknown>;
-    for (const key of ["enum", "examples"]) if (Array.isArray(o[key]) && (o[key] as unknown[]).includes("{{categories}}")) o[key] = [...CATEGORY_KEYS];
+    for (const key of ["enum", "examples"]) if (Array.isArray(o[key])) {
+      o[key] = (o[key] as unknown[]).flatMap((value) => value === "{{categories}}" ? [...CATEGORY_KEYS]
+        : value === "{{domains}}" ? [...DOMAIN_KEYS]
+          : value === "{{reportScopes}}" ? [...REPORT_SCOPES] : [value]);
+    }
+    if (o.maxItems === "{{domainCount}}") o.maxItems = DOMAIN_KEYS.length;
     for (const v of Object.values(o)) walk(v);
   };
   walk(doc);

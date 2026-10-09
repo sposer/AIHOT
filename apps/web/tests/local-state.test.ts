@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { getDomainPreference, KEYS, setDomainPreference } from "../app/lib/local-state.ts";
+import { ENABLED_DOMAIN_KEYS, type DomainKey } from "@aihot/contracts/taxonomy";
 
 const values = new Map<string, string>();
 const original = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -26,6 +27,20 @@ test("navigation preference persists a configured domain or explicit overview wi
   assert.equal(values.get(KEYS.theme), "dark");
   values.set(KEYS.domain, "removed-domain");
   assert.equal(getDomainPreference(), null);
+});
+
+test("disabled preferences stay dormant and return when their configured identity is re-enabled", () => {
+  const enabled = ENABLED_DOMAIN_KEYS as DomainKey[];
+  const index = enabled.indexOf("medical");
+  values.set(KEYS.domain, "medical");
+  enabled.splice(index, 1);
+  try {
+    assert.equal(getDomainPreference(), null);
+    assert.equal(values.get(KEYS.domain), "medical");
+  } finally {
+    enabled.splice(index, 0, "medical");
+  }
+  assert.equal(getDomainPreference(), "medical");
 });
 
 test("unavailable browser storage leaves navigation usable without a stored preference", () => {

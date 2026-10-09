@@ -3,8 +3,8 @@
 // background after that (crawlers get the previous copy meanwhile); if the database fails, the last
 // successful sitemap is served (never an empty one). Bounded.
 import { FEATURES } from "@aihot/industry/features";
-import { REPORT_SCOPES, type ReportKind, type ReportScope } from "@aihot/contracts/site";
-import { DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
+import { ENABLED_REPORT_SCOPES, type ReportKind, type ReportScope } from "@aihot/contracts/site";
+import { ENABLED_DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
 import { reportPath, reportArchivePath } from "@aihot/contracts/http-policy";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -51,8 +51,8 @@ async function build(): Promise<string> {
     { loc: "/privacy", changefreq: "monthly", priority: 0.4 },
     { loc: "/changelog", lastmod: now, changefreq: "weekly", priority: 0.5 },
   );
-  for (const domain of DOMAIN_KEYS) entries.push({ loc: `/all/${domain}`, lastmod: now, changefreq: "hourly", priority: 0.8 });
-  for (const scope of REPORT_SCOPES) {
+  for (const domain of ENABLED_DOMAIN_KEYS) entries.push({ loc: `/all/${domain}`, lastmod: now, changefreq: "hourly", priority: 0.8 });
+  for (const scope of ENABLED_REPORT_SCOPES) {
     for (const kind of ["daily", "weekly", "monthly"] as const) {
       entries.push({ loc: reportPath(kind, scope), lastmod: lastReport(kind, scope), changefreq: kind === "daily" ? "daily" : "weekly", priority: kind === "daily" ? 0.9 : 0.6 });
     }

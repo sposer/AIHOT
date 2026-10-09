@@ -9,8 +9,8 @@
 //      topics and the event grouping need; it runs beside the scoring.
 // Material with only a title or a feed summary has its article page fetched before it is judged.
 import { z } from "zod";
-import { CATEGORY_KEYS, DOMAIN_KEYS, normalizeDomains, type DomainKey } from "@aihot/contracts/taxonomy";
-import { CATEGORIES, DOMAINS } from "@aihot/industry/taxonomy";
+import { CATEGORY_KEYS, DOMAIN_KEYS, isEnabledDomainKey, normalizeDomains, type DomainKey } from "@aihot/contracts/taxonomy";
+import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { SELECTION } from "@aihot/industry/selection";
 import { sql } from "../db.ts";
 import { chatJson, MODELS, type ContentPart } from "../providers/llm.ts";
@@ -122,7 +122,8 @@ const FactSchema = z
 
 // decision: 复用结构化步骤确定领域；not 新增独立分类请求 because 此步骤已读取同一材料并持有内容分类，新增请求会形成第二个判断 owner。
 const StructureSchema = z.object({
-  domains: z.array(z.enum(DOMAIN_KEYS)).max(DOMAIN_KEYS.length).transform(normalizeDomains),
+  // decision: omit disabled identities from new model annotations; not reject them because stored source context can still name a retired domain.
+  domains: z.array(z.enum(DOMAIN_KEYS)).max(DOMAIN_KEYS.length).transform((values) => normalizeDomains(values).filter(isEnabledDomainKey)),
   category: z.enum(CATEGORY_KEYS).nullable().catch(null),
   tags: z.array(z.string()).max(12).catch([]),
   subjects: z.array(z.string()).max(6).catch([]),
@@ -146,7 +147,6 @@ const ZH_COUNT = ["零", "一", "二", "三", "四", "五", "六", "七", "八",
 const STRUCTURE_SYSTEM = promptText("structure", {
   categoryCount: ZH_COUNT[CATEGORIES.length] ?? String(CATEGORIES.length),
   categoryGuide: CATEGORY_GUIDE,
-  domainGuide: DOMAINS.map((d) => `${d.key}：${d.guide}`).join("\n"),
   categoryTags: CATEGORY_TAGS.join("、"),
   topicTags: TOPIC_TAGS.join("、"),
   entityTags: ENTITY_TAGS.join("、"),

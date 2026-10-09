@@ -1,7 +1,7 @@
 // Reader state kept only in this browser; nothing about a reader leaves it. Storage failures degrade
 // silently. Keep the keys and formats once readers have data under them.
 import { useSyncExternalStore } from "react";
-import { isReportScope, type ReportScope } from "@aihot/contracts/site";
+import { isEnabledReportScope, type ReportScope } from "@aihot/contracts/site";
 
 export const KEYS = {
   starred: "aihot-starred-items",
@@ -224,7 +224,8 @@ export const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem('${
 // --- navigation domain ---
 export function getDomainPreference(): ReportScope | null {
   const value = readRaw(KEYS.domain);
-  return isReportScope(value) ? value : null;
+  // A disabled preference is dormant, not erased: re-enabling its identity restores it.
+  return isEnabledReportScope(value) ? value : null;
 }
 
 export function setDomainPreference(scope: ReportScope) {

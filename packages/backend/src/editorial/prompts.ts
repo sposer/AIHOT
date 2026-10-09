@@ -1,6 +1,6 @@
 // Every editorial prompt lives in the industry pack as a Markdown file (industry/prompts/*.md), so a new
 // industry changes its taste by editing text, not code. Two template forms, nothing else:
-//   {{name}}     a value the calling step passes (plus siteName, from industry/site.ts)
+//   {{name}}     a calling-step value, siteName, or the enabled domainNames/domainGuide
 //   {{> file}}   another prompt file, inserted as it is (shared rules)
 // A missing value or file is an error, never a silent blank. Versions are content hashes, so a receipt
 // and the admin's model page always say which wording produced a result.
@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { SITE } from "@aihot/industry/site";
+import { DOMAINS } from "@aihot/industry/taxonomy";
 import { REPO_ROOT } from "../config.ts";
 
 const DIR = path.join(REPO_ROOT, "industry/prompts");
@@ -39,7 +40,13 @@ function expand(name: string, seen: string[] = []): { text: string; used: string
 
 /** A prompt with its values filled in. */
 export function promptText(name: string, values: Record<string, string> = {}): string {
-  const all: Record<string, string> = { siteName: SITE.name, ...values };
+  const domains = DOMAINS.filter((domain) => domain.enabled);
+  const all: Record<string, string> = {
+    siteName: SITE.name,
+    domainNames: domains.map((domain) => domain.label).join("、") || "无启用领域",
+    domainGuide: domains.map((domain) => `${domain.key}：${domain.guide}`).join("\n") || "当前未启用领域，领域归属只能为空数组。",
+    ...values,
+  };
   return expand(name).text.replace(TOKEN, (_token, _include, key: string) => {
     const value = all[key];
     if (value === undefined) throw new Error(`prompt ${name}: no value for {{${key}}}`);

@@ -1,6 +1,6 @@
 // First-party site API (/api/site/*). Not a public API: it may evolve with the website,
 // but it is served from the same public read layer as v1, RSS and MCP.
-import { DOMAIN_KEYS, type CategoryKey, type ChannelKey, type DomainKey } from "./taxonomy.ts";
+import { DOMAIN_KEYS, ENABLED_DOMAIN_KEYS, isEnabledDomainKey, type CategoryKey, type ChannelKey, type DomainKey } from "./taxonomy.ts";
 
 export type SourceKind = "rss" | "web_list" | "json_list" | "x_search" | "mp_account" | "external";
 
@@ -328,6 +328,11 @@ export interface StoryDetail {
 export type ReportKind = "daily" | "weekly" | "monthly";
 export const REPORT_SCOPES = ["all", ...DOMAIN_KEYS] as const;
 export type ReportScope = (typeof REPORT_SCOPES)[number];
+export const ENABLED_REPORT_SCOPES: readonly ReportScope[] = ["all", ...ENABLED_DOMAIN_KEYS];
+
+export function isEnabledReportScope(value: unknown): value is ReportScope {
+  return value === "all" || isEnabledDomainKey(value);
+}
 
 export function isReportScope(value: unknown): value is ReportScope {
   return typeof value === "string" && (REPORT_SCOPES as readonly string[]).includes(value);

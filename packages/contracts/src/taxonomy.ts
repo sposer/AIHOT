@@ -6,6 +6,12 @@ export { CHANNEL_KEYS, CHANNEL_LABELS } from "@aihot/industry/taxonomy";
 export type DomainKey = (typeof DOMAINS)[number]["key"];
 export const DOMAIN_KEYS = DOMAINS.map((d) => d.key) as unknown as readonly [DomainKey, ...DomainKey[]];
 export const DOMAIN_LABELS = Object.fromEntries(DOMAINS.map((d) => [d.key, d.label])) as Record<DomainKey, string>;
+/** Current coverage; disabled identities remain valid for historical data and explicit URLs. */
+export const ENABLED_DOMAIN_KEYS: readonly DomainKey[] = DOMAINS.filter((d) => d.enabled).map((d) => d.key);
+
+export function isEnabledDomainKey(value: unknown): value is DomainKey {
+  return typeof value === "string" && (ENABLED_DOMAIN_KEYS as readonly string[]).includes(value);
+}
 
 export function isDomainKey(value: unknown): value is DomainKey {
   return typeof value === "string" && (DOMAIN_KEYS as readonly string[]).includes(value);

@@ -9,7 +9,7 @@ import { sanitizeBody } from "../content/sanitize.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { createFetchTrace, withFetchTrace } from "../lib/http-fetch.ts";
 import { mpArticle, mpHistory, type MpArticle } from "../providers/dajiala.ts";
-import { observedRunDetail } from "./collect.ts";
+import { collectionCondition, observedRunDetail } from "./collect.ts";
 import { BudgetExceededError, ProviderRejectedError } from "../providers/receipts.ts";
 
 const MAX_NEW_PER_CHECK = 8;
@@ -36,13 +36,15 @@ interface MpSource {
   config: { wxid?: string; ghid?: string; nickname?: string };
   cursor: Record<string, unknown> | null;
   enabled: boolean;
+  coverageEnabled: boolean;
   participation_mode: string;
 }
 
 export async function checkMpAccount(sourceId: string, reason: "schedule" | "manual") {
-  const [source] = await sql<MpSource[]>`SELECT id, name, config, cursor, enabled, participation_mode FROM sources WHERE id = ${sourceId} AND kind = 'mp_account'`;
+  const [source] = await sql<MpSource[]>`SELECT id, name, config, cursor, enabled, participation_mode,
+    ${collectionCondition()} AS "coverageEnabled" FROM sources WHERE id = ${sourceId} AND kind = 'mp_account'`;
   if (!source) return { sourceId, status: "missing" as const };
-  if (!source.enabled && reason !== "manual") return { sourceId, status: "paused" as const };
+  if ((!source.enabled || !source.coverageEnabled) && reason !== "manual") return { sourceId, status: "paused" as const };
   const ghid = source.config.ghid ?? source.config.wxid;
   if (!ghid) return { sourceId, status: "unconfigured" as const };
   const [run] = await sql<{ id: number }[]>`INSERT INTO fetch_runs (source_id, detail) VALUES (${sourceId}, ${sql.json({ reason })}) RETURNING id`;
@@ -132,7 +134,7 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
 /** Every enabled account is checked once per its interval (the paid list call is the cost). */
 export async function scheduleMpReconcile(now = new Date()) {
   const rows = await sql<{ id: string; last: string | null; interval_minutes: number }[]>`
-    SELECT id, cursor->>'lastCheckedAt' AS last, interval_minutes FROM sources WHERE kind = 'mp_account' AND enabled`;
+    SELECT id, cursor->>'lastCheckedAt' AS last, interval_minutes FROM sources WHERE kind = 'mp_account' AND enabled AND ${collectionCondition()}`;
   let enqueued = 0;
   for (const s of rows) {
     const since = s.last ? now.getTime() - Date.parse(s.last) : Infinity;

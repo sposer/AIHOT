@@ -1,5 +1,5 @@
 import { SITE } from "@aihot/industry/site";
-import { DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
+import { DOMAIN_KEYS, DOMAIN_LABELS, isEnabledDomainKey, type DomainKey } from "@aihot/contracts/taxonomy";
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/source";
@@ -266,7 +266,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
                           setDraft({ ...draft, domains: DOMAIN_KEYS.filter((key) => next.has(key)) });
                         }}
                       />
-                      {DOMAIN_LABELS[domain]}
+                      {DOMAIN_LABELS[domain]}{!isEnabledDomainKey(domain) && " · 已停用"}
                     </label>
                   ))}
                 </div>

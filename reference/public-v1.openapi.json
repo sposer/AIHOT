@@ -1579,11 +1579,11 @@
     "schemas": {
       "Domain": {
         "type": "string",
-        "enum": ["ai", "medical", "legal", "military", "policy"]
+        "enum": ["{{domains}}"]
       },
       "Domains": {
         "type": "array",
-        "maxItems": 5,
+        "maxItems": "{{domainCount}}",
         "uniqueItems": true,
         "items": {
           "$ref": "#/components/schemas/Domain"
@@ -1592,7 +1592,7 @@
       },
       "ReportScope": {
         "type": "string",
-        "enum": ["all", "ai", "medical", "legal", "military", "policy"],
+        "enum": ["{{reportScopes}}"],
         "description": "all is the overview scope, not an article domain."
       },
       "Problem": {

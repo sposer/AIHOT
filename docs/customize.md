@@ -26,12 +26,22 @@
 
 ## 2. 分类、标签和主题：`industry/taxonomy.ts`、`industry/topics.json`
 
-- `DOMAINS`：领域名称和稳定 key 的 owner；文章可以涉及多个领域。`all` 只表示概览或报告 scope，不是文章领域。每个领域的 `columns` 配置精选与动态的子栏目，`key` 标识展示入口，`label` 是显示名，`filters` 组合现有 `category`、`tag`、`channel` 筛选。概览和 AI 复用 `DEFAULT_COLUMNS`；领域及子栏目名单以 [`taxonomy.ts`](../industry/taxonomy.ts) 为准。
+- `DOMAINS`：领域名称、稳定 key、`enabled` 和判断指南 `guide` 的 owner；文章可以涉及多个领域。`all` 只表示概览或报告 scope，不是文章领域。每个领域的 `columns` 配置精选与动态的子栏目，`key` 标识展示入口，`label` 是显示名，`filters` 组合现有 `category`、`tag`、`channel` 筛选。概览和 AI 复用 `DEFAULT_COLUMNS`；领域及子栏目名单以 [`taxonomy.ts`](../industry/taxonomy.ts) 为准。
 - `CATEGORIES`：类别与领域是独立维度。`key` 是网址和接口里的身份；`label` 用于卡片与默认子栏目；`section` 是日报里的分节；`guide` 告诉模型怎么归类。改变子栏目名称或顺序不需要重分析文章、重建数据或修改报告分节。
 - `CATEGORY_TAGS`、`TOPIC_TAGS`、`ENTITY_TAGS`：模型打标签时只能从这里选。第一个标签必须是“分类标签”。
 - `ENTITIES`：行业里的主要公司或机构，用于“公司”类主题页。`IDENTITY_LEXICON`、`PUBLISHER_DOMAINS` 用来防止模型在标题摘要里写进原文没提到的公司，别的行业没有这个需要可以清空。
 - `ITEM_TYPES`：内容类型，和评分提示词里的权重表对应，改了要一起改提示词。
 - `topics.json`：主题目录（`/topics`）。分三组：`company`（公司与机构）、`field`（方向）、`genre`（内容形态）。每个主题用 `tags` 或 `entityId` 决定收哪些内容。`slug` 是主题页路径的身份。
+
+### 领域新增与停用
+
+新增领域时，在 `DOMAINS` 增加唯一稳定 `key`、`label`、`enabled: true`、文章判断 `guide` 和子栏目 `columns`，再配置对应信源与词表。预筛、评分和写作的读者范围、结构化领域、导航、报告调度、MCP 和运行时 OpenAPI 都从这份配置派生；不用修改业务代码或数据库枚举。新领域的质量仍须按[校准流程](selection.md)准备人工样本，不沿用其他领域的合格结论。
+
+停用时保留原条目，把 `enabled` 设为 `false`：当前导航与新报告调度不再包含该领域，结构化模型不再给新分析标注该 key。覆盖范围非空且不含任何启用领域的信源停止自动采集；空覆盖范围不代替文章判断，有启用领域时仍可采集。全部领域停用时自动采集关闭。后台试抓和手动抓取仍是管理员的显式动作。
+
+历史文章、人工纠正、报告、同步 payload 和已有领域 URL 保留原身份，仍可读取；不批量改写历史归属，不删除或重命名曾使用的 key。浏览器中已停用的偏好暂不用于生成全局导航，也不删除原值；重新启用可继续使用。
+
+配置随应用构建加载。更改后运行类型检查、测试和 Web 构建，按[部署流程](deploy.md)让 API、worker 与 Web 使用同一份配置；worker 启动时同步并取消已经停用的报告计划。重新启用使用原 key，按现有补报窗口恢复生产，不建立第二套生产流程。
 
 改完主题后运行 `node --env-file=.env scripts/seed.ts`（Docker 里会在启动时自动运行），主题会更新进数据库。
 
@@ -68,7 +78,7 @@
 | `story-digest.md`、`report-*.md` | 事件综述、日报导语、周报月报 |
 | `translate-*.md` | 全文翻译 |
 
-提示词里用 `{{siteName}}` 指代站名，`{{> 文件名}}` 引用另一份提示词。改提示词不用改代码。
+提示词里用 `{{siteName}}` 指代站名，`{{domainNames}}` 与 `{{domainGuide}}` 来自启用领域配置，`{{> 文件名}}` 引用另一份提示词。改提示词不用改代码。
 
 **建议的做法**：先保留结构（五个维度加权、噪声压制规则、安全边界），只把“什么算重要”“什么算噪声”的例子换成你的行业。比如法律行业，“新法规正式公布、重要判决、监管处罚”应该正常评价，“律所营销软文、课程广告”要压住。
 

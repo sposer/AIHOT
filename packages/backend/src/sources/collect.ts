@@ -1,5 +1,6 @@
 // Collection run for one source: fetch listing → filter → store material → enqueue processing.
 // A failed fetch never advances the success cursor; the source's health reflects consecutive failures.
+import { ENABLED_DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
 import { config } from "../config.ts";
 import { sql } from "../db.ts";
 import { identityKeyFor, upsertMaterial } from "../content/materials.ts";
@@ -82,9 +83,17 @@ function rewriteUrl(c: Candidate, source: SourceRow): Candidate {
   return c;
 }
 
-async function loadSource(id: string): Promise<SourceRow | null> {
-  const [s] = await sql<SourceRow[]>`
-    SELECT id, name, kind, config, tier, participation_mode, first_party, interval_minutes, enabled, cursor, fail_count
+/** Empty source coverage is unspecified, not an article-domain fallback. */
+export function collectionCondition() {
+  return ENABLED_DOMAIN_KEYS.length
+    ? sql`(cardinality(domains) = 0 OR domains && ${[...ENABLED_DOMAIN_KEYS]}::text[])`
+    : sql`false`;
+}
+
+async function loadSource(id: string): Promise<(SourceRow & { coverageEnabled: boolean }) | null> {
+  const [s] = await sql<(SourceRow & { coverageEnabled: boolean })[]>`
+    SELECT id, name, kind, config, tier, participation_mode, first_party, interval_minutes, enabled, cursor, fail_count,
+           ${collectionCondition()} AS "coverageEnabled"
     FROM sources WHERE id = ${id}`;
   return s ?? null;
 }
@@ -123,7 +132,7 @@ async function store(sourceId: string, candidates: Candidate[], backfill: string
 export async function collectSource(sourceId: string, opts: { force?: boolean } = {}): Promise<CollectResult> {
   const source = await loadSource(sourceId);
   if (!source) return { sourceId, status: "skipped", found: 0, created: 0, revised: 0, error: "missing" };
-  if (!source.enabled && !opts.force) return { sourceId, status: "skipped", found: 0, created: 0, revised: 0, error: "paused" };
+  if ((!source.enabled || !source.coverageEnabled) && !opts.force) return { sourceId, status: "skipped", found: 0, created: 0, revised: 0, error: "paused" };
   if (source.kind === "mp_account" || source.kind === "external") {
     // WeChat accounts are reconciled by the mp job; external sources only receive reports.
     return { sourceId, status: "skipped", found: 0, created: 0, revised: 0 };
@@ -314,7 +323,7 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
   const members = (
     await sql<SourceRow[]>`
       SELECT id, name, kind, config, tier, participation_mode, first_party, interval_minutes, enabled, cursor, fail_count
-      FROM sources WHERE id IN ${sql(sourceIds)} ORDER BY id`
+      FROM sources WHERE id IN ${sql(sourceIds)} AND ${collectionCondition()} ORDER BY id`
   ).filter((m) => m.enabled && shardHandle(m));
   if (members.length === 0) return { key, status: "skipped", accounts: 0, found: 0, created: 0 };
   const minutes = shardMinutes(members[0]!.participation_mode);
@@ -394,7 +403,7 @@ const sharded = () => sql`kind = 'x_search' AND config->>'query' ~* ${SHARDABLE_
 async function scheduleXShards(): Promise<number> {
   const rows = await sql<Array<Pick<SourceRow, "id" | "kind" | "config" | "cursor" | "participation_mode"> & { due: boolean }>>`
     SELECT id, kind, config, cursor, participation_mode, (next_fetch_at IS NULL OR next_fetch_at <= now()) AS due
-    FROM sources WHERE enabled AND ${sharded()}`;
+    FROM sources WHERE enabled AND ${collectionCondition()} AND ${sharded()}`;
   const due = new Set(rows.filter((r) => r.due).map((r) => r.id));
   let enqueued = 0;
   for (const shard of planXShards(rows)) {
@@ -413,7 +422,7 @@ export async function scheduleDueSources(limit = Number(process.env.FETCH_SCHEDU
   const skipJina = process.env.COLLECT_SKIP_JINA === "true";
   const rows = await sql<{ id: string }[]>`
     SELECT id FROM sources
-    WHERE enabled AND kind IN ${sql(kinds)} AND (next_fetch_at IS NULL OR next_fetch_at <= now()) AND NOT (${sharded()})
+    WHERE enabled AND ${collectionCondition()} AND kind IN ${sql(kinds)} AND (next_fetch_at IS NULL OR next_fetch_at <= now()) AND NOT (${sharded()})
       ${skipJina ? sql`AND config::text NOT LIKE '%r.jina.ai%'` : sql``}
     ORDER BY next_fetch_at NULLS FIRST LIMIT ${limit}`;
   for (const r of rows) {

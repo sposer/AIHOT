@@ -1,5 +1,5 @@
 import { SITE } from "@aihot/industry/site";
-import { DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
+import { DOMAIN_KEYS, DOMAIN_LABELS, isEnabledDomainKey, type DomainKey } from "@aihot/contracts/taxonomy";
 import { Form, Link, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/sources";
 import { adminGet } from "../../lib/admin.server";
@@ -94,7 +94,7 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
               }}
             >
               <option value="">全部领域</option>
-              {DOMAIN_KEYS.map((domain) => <option key={domain} value={domain}>{DOMAIN_LABELS[domain]}</option>)}
+              {DOMAIN_KEYS.map((domain) => <option key={domain} value={domain}>{DOMAIN_LABELS[domain]}{!isEnabledDomainKey(domain) && " · 已停用"}</option>)}
             </Select>
           </div>
         </div>

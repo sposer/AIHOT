@@ -1,7 +1,7 @@
 import { data as routeData, Link, useLoaderData } from "react-router";
 import type { Route } from "./+types/hot";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
-import { DOMAIN_KEYS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
+import { ENABLED_DOMAIN_KEYS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString } from "../lib/api.server";
 import { listPath, pageMeta } from "../lib/seo";
 import { monthDayTime, shortSourceName } from "../lib/format";
@@ -21,12 +21,12 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export function meta({ loaderData }: Route.MetaArgs) {
   const domain = isDomainKey(loaderData?.domain) ? loaderData.domain : null;
-  const subjects = DOMAIN_KEYS.map((key) => DOMAIN_LABELS[key]).join("、");
+  const subjects = ENABLED_DOMAIN_KEYS.length ? `${ENABLED_DOMAIN_KEYS.map((key) => DOMAIN_LABELS[key]).join("、")}等领域` : "全站";
   return pageMeta({
     title: "热点",
     description: domain
       ? `过去 48 小时，${DOMAIN_LABELS[domain]}领域讨论最多的事件：热度指数、趋势与组成热度的公开来源。`
-      : `过去 48 小时，${subjects}等领域讨论最多的事件：热度指数、趋势与组成热度的公开来源。`,
+      : `过去 48 小时，${subjects}讨论最多的事件：热度指数、趋势与组成热度的公开来源。`,
     path: listPath("/hot", { domain }),
     image: "/og/pages/hot.png",
   });
@@ -247,7 +247,7 @@ export default function HotPage() {
           </div>
           <h1 className="mt-1.5 text-[24px] font-bold leading-[1.3] tracking-[-0.01em] text-ink lg:text-[26px]">热点</h1>
           <p className="mt-1.5 text-[13.5px] text-ink-3">
-            过去 {hot.windowHours} 小时，{isDomainKey(domain) ? `${DOMAIN_LABELS[domain]}领域` : `${DOMAIN_KEYS.map((key) => DOMAIN_LABELS[key]).join("、")}等领域`}讨论最多的 {hot.entries.length || 10} 件事
+            过去 {hot.windowHours} 小时，{isDomainKey(domain) ? `${DOMAIN_LABELS[domain]}领域` : ENABLED_DOMAIN_KEYS.length ? `${ENABLED_DOMAIN_KEYS.map((key) => DOMAIN_LABELS[key]).join("、")}等领域` : "全站"}讨论最多的 {hot.entries.length || 10} 件事
           </p>
         </div>
         {hot.computedAt && (

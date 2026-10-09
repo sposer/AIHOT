@@ -36,13 +36,14 @@ export const DEFAULT_COLUMNS = [
 
 // decision: 子栏目使用展示筛选预设；not 每领域存储类别 because 现有 category/tag/channel 已能表达入口，另建类别会重复分类身份并要求重分析和数据迁移。
 // decision: 文章支持多领域归属；not 单一主领域 because 医疗、法律、军事与政策报道会实质交叉，信源覆盖范围不能替代逐篇判断。
+// decision: 用 enabled 停用领域；not 删除稳定 key because 历史文章、报告、同步数据和外部链接仍持有该身份。
 export const DOMAINS = [
   {
-    key: "ai", label: "AI", guide: "人工智能技术、模型、智能体、AI 产品和工程，以及 AI 对社会与行业的实质影响",
+    key: "ai", label: "AI", enabled: true, guide: "人工智能技术、模型、智能体、AI 产品和工程，以及 AI 对社会与行业的实质影响",
     columns: DEFAULT_COLUMNS,
   },
   {
-    key: "medical", label: "医疗", guide: "医学研究、临床证据、药品与医疗器械、公共卫生、诊疗及医疗服务",
+    key: "medical", label: "医疗", enabled: true, guide: "医学研究、临床证据、药品与医疗器械、公共卫生、诊疗及医疗服务",
     columns: [
       ...COMMON_COLUMNS,
       { key: "clinical-research", label: "临床研究", filters: { tag: "临床研究" } },
@@ -54,7 +55,7 @@ export const DOMAINS = [
     ],
   },
   {
-    key: "legal", label: "法律", guide: "法律法规、司法解释、判决与案件、执法、权利义务及法律实践",
+    key: "legal", label: "法律", enabled: true, guide: "法律法规、司法解释、判决与案件、执法、权利义务及法律实践",
     columns: [
       ...COMMON_COLUMNS,
       { key: "legislation", label: "立法", filters: { tag: "立法" } },
@@ -67,7 +68,7 @@ export const DOMAINS = [
     ],
   },
   {
-    key: "military", label: "军事", guide: "国防、武装冲突、军事行动、装备、战略与安全研究",
+    key: "military", label: "军事", enabled: true, guide: "国防、武装冲突、军事行动、装备、战略与安全研究",
     columns: [
       ...COMMON_COLUMNS,
       { key: "defence", label: "战略", filters: { tag: "国防/战略" } },
@@ -78,7 +79,7 @@ export const DOMAINS = [
     ],
   },
   {
-    key: "policy", label: "政策", guide: "公共政策、政府规章与决策、监管、治理及政策实施与评估",
+    key: "policy", label: "政策", enabled: true, guide: "公共政策、政府规章与决策、监管、治理及政策实施与评估",
     columns: [
       ...COMMON_COLUMNS,
       { key: "policy", label: "政策监管", filters: { tag: "政策/监管" } },

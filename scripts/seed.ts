@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { FEATURES } from "@aihot/industry/features";
-import type { DomainKey } from "@aihot/contracts/taxonomy";
+import { isDomainKey, type DomainKey } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { importModelDirectory } from "@aihot/backend/leaderboard/directory";
@@ -38,6 +38,11 @@ if (process.argv.includes("--topics-only")) {
 const { sources } = JSON.parse(readFileSync(path.join(REPO_ROOT, "industry/sources.json"), "utf8")) as { sources: SeedSource[] };
 let added = 0;
 for (const s of sources) {
+  // decision: validate source-pack identities here; not rely on the SeedSource cast because
+  // parsing JSON does not enforce TypeScript's registered domain type.
+  if (!Array.isArray(s.domains) || !s.domains.every(isDomainKey)) {
+    throw new Error(`source ${s.id}: domains must be an array of registered domain keys`);
+  }
   assertSupportedConfig(s.kind, s.config);
   const inserted = await sql`
     INSERT INTO sources (id, name, kind, config, tier, first_party, owner_entity_id, participation_mode, interval_minutes, domains, tags, site_fulltext, syndicate_fulltext, enabled, next_fetch_at)

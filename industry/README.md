@@ -2,7 +2,7 @@
 
 这个站和“行业”有关的一切都在这里。当前默认 MyHOT 配置覆盖五个领域；换成你的行业，主要就是改这个文件夹，步骤见 [把它改成你的行业](../docs/customize.md)。
 
-`taxonomy.ts` 中的 `DOMAINS` 是领域名称和 key 的 owner；类别是另一套独立维度。`all` 仅作概览和报告范围，不是文章领域。逐篇归属及信源覆盖范围的区别见[架构说明](../docs/architecture.md)。
+`taxonomy.ts` 中的 `DOMAINS` 是领域名称、稳定 key、启停和判断指南的 owner；新增与停用流程见[定制说明](../docs/customize.md#领域新增与停用)。类别是另一套独立维度。`all` 仅作概览和报告范围，不是文章领域。逐篇归属及信源覆盖范围的区别见[架构说明](../docs/architecture.md)。
 
 | 文件 | 内容 |
 |---|---|

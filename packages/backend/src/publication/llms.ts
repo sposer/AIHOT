@@ -1,8 +1,8 @@
 // /llms.txt — generated from the site's own configuration; only real, available resources are listed.
 import { SITE, withSubject } from "@aihot/industry/site";
 import { FEATURES } from "@aihot/industry/features";
-import { CATEGORY_KEYS, DOMAIN_KEYS, DOMAIN_LABELS } from "@aihot/contracts/taxonomy";
-import { REPORT_SCOPES, type ReportKind, type ReportScope } from "@aihot/contracts/site";
+import { CATEGORY_KEYS, DOMAIN_KEYS, DOMAIN_LABELS, ENABLED_DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
+import { ENABLED_REPORT_SCOPES, REPORT_SCOPES, type ReportKind, type ReportScope } from "@aihot/contracts/site";
 import { reportPath, reportArchivePath } from "@aihot/contracts/http-policy";
 import { siteUrl } from "./links.ts";
 import { sql } from "../db.ts";
@@ -39,7 +39,7 @@ export function llmsTxt(opts: { reports: ReadonlyArray<{ kind: ReportKind; scope
   lines.push(`- [精选摘要 RSS](${u("/feed.xml")}): 最新 50 条精选摘要，保留标题、站内阅读与原文入口`);
   lines.push(`- [精选全文 RSS](${u("/feed/full.xml")}): 与精选摘要相同的最新 50 条；只对明确允许再分发的来源内联正文`);
   lines.push(`- [动态 RSS](${u("/feed/all.xml")}): 最近 7 天公开动态，按真实发布时间倒序`);
-  for (const scope of dailyScopes) lines.push(`- [${title("daily", scope)} RSS](${u(`/feed/daily.xml${query(scope)}`)}): 每天 08:00 北京时间发布，保留最近 30 期`);
+  for (const scope of dailyScopes) lines.push(`- [${title("daily", scope)} RSS](${u(`/feed/daily.xml${query(scope)}`)}): ${ENABLED_REPORT_SCOPES.includes(scope) ? "每天 08:00 北京时间发布，保留最近 30 期" : "停用领域的历史报告，保留最近 30 期"}`);
   lines.push(`- [分类 RSS](${u(`/feed/category/${CATEGORY_KEYS[0]}.xml`)}): 按分类订阅精选，slug 支持 ${CATEGORY_KEYS.join(" / ")}`);
   lines.push(`- [公开 API v1 · 最近资讯](${u("/api/v1/items")}): JSON，支持 mode=selected/all、window=24h/7d、by=timeline/published、domain、category、q、limit 与 cursor`);
   lines.push(`- [公开 API v1 · 当前热点](${u("/api/v1/hot-topics")}): 热点 Top 10；支持 domain；每条含从 1 开始的 rank 和当前公开报道派生的 domains，links.story 指向同一全局事件页`);
@@ -58,9 +58,9 @@ export function llmsTxt(opts: { reports: ReadonlyArray<{ kind: ReportKind; scope
   lines.push(`- [首页 · 精选](${u("/")}): 每日精选动态`);
   lines.push(`- [热点](${u("/hot")}): 过去 48 小时内被多个独立信源共同讨论的事件`);
   lines.push(`- [动态](${u("/all")}): 各领域公开资讯，按类别筛选`);
-  for (const domain of DOMAIN_KEYS) lines.push(`- [${DOMAIN_LABELS[domain]}动态](${u(`/all/${domain}`)}): 当前领域的公开资讯`);
+  for (const domain of ENABLED_DOMAIN_KEYS) lines.push(`- [${DOMAIN_LABELS[domain]}动态](${u(`/all/${domain}`)}): 当前领域的公开资讯`);
   for (const scope of REPORT_SCOPES) {
-    for (const kind of kinds) if (available(kind, scope)) lines.push(`- [${title(kind, scope)}](${u(reportPath(kind, scope))}): ${kind === "daily" ? "每日精编汇总" : kind === "weekly" ? "每周综合回顾" : "每月盘点"}`);
+    for (const kind of kinds) if (ENABLED_REPORT_SCOPES.includes(scope) && available(kind, scope)) lines.push(`- [${title(kind, scope)}](${u(reportPath(kind, scope))}): ${kind === "daily" ? "每日精编汇总" : kind === "weekly" ? "每周综合回顾" : "每月盘点"}`);
     if (available("daily", scope)) lines.push(`- [${title("daily", scope)}存档](${u(reportArchivePath(scope))}): 历史报告归档`);
   }
   lines.push(`- [主题](${u("/topics")}): 按机构与主体、专业方向、内容形态聚合，支持领域筛选`);

@@ -86,3 +86,40 @@ test("0003 removes reset monitor data and settings while preserving shared histo
     await tx.unsafe(`DROP SCHEMA "${schema}" CASCADE`);
   });
 });
+
+test("0004 accepts configured domain identities without rewriting historical rows or revisions", async () => {
+  const migrations = await Promise.all(["0001_core.sql", "0002_domains.sql", "0004_configurable_domains.sql"].map((file) =>
+    readFile(new URL(`../database/migrations/${file}`, import.meta.url), "utf8"),
+  ));
+  const schema = `test_migration_domains_${T}`;
+  await sql.begin(async (tx) => {
+    await tx.unsafe(`CREATE SCHEMA "${schema}"`);
+    await tx.unsafe(`SET LOCAL search_path = "${schema}", public`);
+    await tx.unsafe(migrations[0]!);
+    await tx.unsafe(migrations[1]!);
+    await tx`INSERT INTO sources (id, name, kind, domains) VALUES ('history', 'History', 'rss', ARRAY['medical'])`;
+    await tx`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at)
+      VALUES ('history-item', 'history', 'history-key', 'https://example.com/history', 'History', now(), now())`;
+    await tx`INSERT INTO analyses (article_id, input_revision, origin, domains) VALUES ('history-item', 1, 'model', ARRAY['medical'])`;
+    await tx`INSERT INTO publications (article_id, title, source_id, channel, url, discovered_at, timeline_at, sort_at, domains)
+      VALUES ('history-item', 'History', 'history', 'news', 'https://example.com/history', now(), now(), now(), ARRAY['medical'])`;
+    await tx`INSERT INTO selected_ledger (seq, article_id, op, payload) VALUES (1, 'history-item', 'upsert', '{"id":"history-item","domains":["medical"]}')`;
+    const [before] = await tx<{ id: number }[]>`INSERT INTO reports (kind, scope, key, window_start, window_end, content, generated_at)
+      VALUES ('daily', 'medical', '2026-10-01', now() - interval '1 day', now(), '{}', now()) RETURNING id`;
+    await tx`INSERT INTO report_revisions (report_id, revision, content, generated_at) VALUES (${before!.id}, 1, '{}', now())`;
+    await tx.unsafe(migrations[2]!);
+    for (const table of ["sources", "analyses", "publications"]) {
+      assert.deepEqual((await tx.unsafe<{ domains: string[] }[]>(`SELECT domains FROM "${table}"`))[0]!.domains, ["medical"]);
+      await tx.unsafe(`UPDATE "${table}" SET domains = ARRAY['finance', 'medical']`);
+      assert.deepEqual((await tx.unsafe<{ domains: string[] }[]>(`SELECT domains FROM "${table}"`))[0]!.domains, ["finance", "medical"]);
+    }
+    assert.deepEqual((await tx`SELECT article_id, input_revision FROM analyses`)[0], { article_id: "history-item", input_revision: 1 });
+    assert.deepEqual((await tx`SELECT payload FROM selected_ledger`)[0]!.payload, { id: "history-item", domains: ["medical"] });
+    assert.deepEqual((await tx`SELECT id, scope FROM reports`)[0], { id: before!.id, scope: "medical" });
+    assert.equal((await tx`SELECT report_id FROM report_revisions`)[0]!.report_id, before!.id);
+    await tx`INSERT INTO reports (kind, scope, key, window_start, window_end, content, generated_at)
+      VALUES ('daily', 'finance', '2026-10-01', now() - interval '1 day', now(), '{}', now())`;
+    assert.equal((await tx`SELECT 1 FROM reports`).length, 2);
+    await tx.unsafe(`DROP SCHEMA "${schema}" CASCADE`);
+  });
+});

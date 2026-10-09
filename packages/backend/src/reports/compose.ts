@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { SITE } from "@aihot/industry/site";
 import { CATEGORIES } from "@aihot/industry/taxonomy";
-import type { ReportKind, ReportScope } from "@aihot/contracts/site";
+import { isEnabledReportScope, type ReportKind, type ReportScope } from "@aihot/contracts/site";
 import { DOMAIN_LABELS } from "@aihot/contracts/taxonomy";
 import { domainCondition } from "../publication/items.ts";
 import { promptText, promptVersion } from "../editorial/prompts.ts";
@@ -133,6 +133,7 @@ async function saveReport(kind: ReportKind, scope: ReportScope, key: string, sta
 
 /** Daily report for Beijing date D covers [D-1 08:00, D 08:00) Beijing time. */
 export async function composeDaily(scope: ReportScope, date: string, reason = "scheduled"): Promise<{ scope: ReportScope; key: string; entries: number }> {
+  if (!isEnabledReportScope(scope)) return { scope, key: date, entries: 0 };
   const end = new Date(beijingMidnight(date).getTime() + 8 * 3600 * 1000);
   const start = new Date(end.getTime() - 86400000);
   const covered = await recentlyCovered(scope, "daily", date);
@@ -196,6 +197,7 @@ export function periodPrompt(kind: "weekly" | "monthly", scope: ReportScope, key
 }
 
 async function composePeriod(kind: "weekly" | "monthly", scope: ReportScope, key: string, startDate: string, endDateInclusive: string, reason: string) {
+  if (!isEnabledReportScope(scope)) return { scope, key, entries: 0 };
   const start = beijingMidnight(startDate);
   const end = beijingMidnight(addDays(endDateInclusive, 1));
   const all = await candidates(scope, start, end);
@@ -257,6 +259,7 @@ export async function composeMonthly(scope: ReportScope, label: string, reason =
  * before the first report in the database), the last complete week and the last complete month.
  */
 export async function catchUpReports(scope: ReportScope, now = new Date(), days = 7): Promise<{ generated: string[] }> {
+  if (!isEnabledReportScope(scope)) return { generated: [] };
   const generated: string[] = [];
   const today = beijingDate(now);
   const bjHour = Number(new Date(now.getTime() + 8 * 3600000).toISOString().slice(11, 13));

@@ -1,6 +1,6 @@
 import { data as routeData, Link, useLoaderData } from "react-router";
 import type { TopicSummary } from "@aihot/contracts/site";
-import { DOMAIN_KEYS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
+import { ENABLED_DOMAIN_KEYS, DOMAIN_LABELS, isDomainKey } from "@aihot/contracts/taxonomy";
 import { loadOr404, queryString } from "../lib/api.server";
 import { listPath, pageMeta } from "../lib/seo";
 
@@ -13,12 +13,12 @@ export async function loader({ request }: { request: Request }) {
 
 export function meta({ loaderData }: { loaderData: Awaited<ReturnType<typeof loader>> | undefined }) {
   const domain = isDomainKey(loaderData?.domain) ? loaderData.domain : null;
-  const domains = DOMAIN_KEYS.map((key) => DOMAIN_LABELS[key]).join("、");
+  const domains = ENABLED_DOMAIN_KEYS.map((key) => DOMAIN_LABELS[key]).join("、");
   return pageMeta({
     title: "主题",
     description: domain
       ? `${DOMAIN_LABELS[domain]}领域的主题，按机构与主体、专业方向、内容形态浏览。`
-      : `按机构与主体、专业方向、内容形态浏览${domains}等领域的主题动态。`,
+      : `按机构与主体、专业方向、内容形态浏览${domains ? `${domains}等领域` : "各领域"}的主题动态。`,
     path: listPath("/topics", { domain }),
     image: "/og/pages/topics.png",
   });

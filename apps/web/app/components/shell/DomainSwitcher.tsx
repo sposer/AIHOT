@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router";
-import { REPORT_SCOPES, type ReportScope } from "@aihot/contracts/site";
+import { ENABLED_REPORT_SCOPES, type ReportScope } from "@aihot/contracts/site";
 import { DOMAIN_LABELS } from "@aihot/contracts/taxonomy";
 import { switchDomainHref } from "@aihot/contracts/http-policy";
 import { setDomainPreference } from "../../lib/local-state";
@@ -20,7 +20,7 @@ export function DomainSwitcher({ sidebar = false }: { sidebar?: boolean }) {
       triggerClassName={`flex h-11 items-center justify-between gap-2 px-2.5 text-[13px] font-semibold ${sidebar ? "w-full bg-bg-sunk" : "min-w-[100px]"}`}
       trigger={<><span>{labelOf(scope)}</span><IconChevronDown size={14} /></>}
     >
-      {(close) => REPORT_SCOPES.map((target) => (
+      {(close) => ENABLED_REPORT_SCOPES.map((target) => (
         <Link
           key={target}
           role="menuitemradio"

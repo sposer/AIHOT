@@ -1,5 +1,5 @@
 import { SITE } from "@aihot/industry/site";
-import { DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
+import { DOMAIN_KEYS, DOMAIN_LABELS, isEnabledDomainKey, type DomainKey } from "@aihot/contracts/taxonomy";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import type { Route } from "./+types/source-new";
@@ -100,7 +100,7 @@ export default function NewSource() {
                         setForm({ ...form, domains: DOMAIN_KEYS.filter((key) => next.has(key)) });
                       }}
                     />
-                    {DOMAIN_LABELS[domain]}
+                    {DOMAIN_LABELS[domain]}{!isEnabledDomainKey(domain) && " · 已停用"}
                   </label>
                 ))}
               </div>

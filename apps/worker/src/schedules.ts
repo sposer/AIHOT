@@ -11,7 +11,7 @@ import { computeHotRanking, snapshotHeat } from "@aihot/backend/events/hot";
 import { refreshStoryStatuses } from "@aihot/backend/events/digest";
 import { linkRelatedStories } from "@aihot/backend/events/group";
 import { catchUpReports, composeDaily, composeMonthly, composeWeekly } from "@aihot/backend/reports/compose";
-import { REPORT_SCOPES } from "@aihot/contracts/site";
+import { ENABLED_REPORT_SCOPES } from "@aihot/contracts/site";
 import { addDays, beijingDate, isoWeekLabel } from "@aihot/contracts/time";
 import { runLeaderboardRound } from "@aihot/backend/leaderboard/method/run";
 import { refreshLeaderboard } from "@aihot/backend/leaderboard/fetch/refresh";
@@ -42,7 +42,7 @@ export const SCHEDULES: Scheduled[] = [
   { name: "hot.snapshot", cron: "2 * * * *", run: () => snapshotHeat() },
   { name: "stories.status", cron: "7 * * * *", run: refreshStoryStatuses },
   { name: "stories.links", cron: "12 * * * *", run: linkRelatedStories },
-  ...REPORT_SCOPES.flatMap((scope): Scheduled[] => [
+  ...ENABLED_REPORT_SCOPES.flatMap((scope): Scheduled[] => [
     { name: `reports.daily.${scope}`, cron: "0 8 * * *", missed: "once", run: () => composeDaily(scope, beijingDate(Date.now())) },
     { name: `reports.weekly.${scope}`, cron: "0 10 * * 1", missed: "once", run: () => composeWeekly(scope, isoWeekLabel(addDays(beijingDate(Date.now()), -7))) },
     {

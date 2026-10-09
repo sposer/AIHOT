@@ -5,7 +5,7 @@
 //   digest — follow-ups without reader impact: one 09:00 message a day, meant to be handed to the AI.
 // Delivery goes through sendAlert (ops chat, internal-chat fallback; off unless FEISHU_INTERNAL_ENABLED).
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
-import { REPORT_SCOPES, type ReportScope } from "@aihot/contracts/site";
+import { ENABLED_REPORT_SCOPES, type ReportScope } from "@aihot/contracts/site";
 import { sql } from "../db.ts";
 import { beijingDay, beijingStamp, duration, formatAlert, formatRecovery, sendAlert, type Finding, type Level } from "../notify/feishu.ts";
 import { backupConfigured } from "./backup.ts";
@@ -69,7 +69,7 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
     // The daily report is composed at 08:00 and caught up hourly.
     if (Number(beijingTime(now).slice(0, 2)) >= 10) {
       const rows = await sql<{ scope: ReportScope }[]>`SELECT scope FROM reports WHERE kind = 'daily' AND key = ${beijingDate(now)}`;
-      const missing = REPORT_SCOPES.filter((scope) => !rows.some((r) => r.scope === scope));
+      const missing = ENABLED_REPORT_SCOPES.filter((scope) => !rows.some((r) => r.scope === scope));
       if (missing.length) {
         out.push({
           key: "report.daily",

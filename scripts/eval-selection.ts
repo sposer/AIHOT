@@ -12,7 +12,8 @@ import { parseArgs } from "node:util";
 import { REPO_ROOT } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { ANALYZE_PROMPT_VERSION, normalizeAnalysis, runAnalysis, type AnalyzeInputArticle } from "@aihot/backend/editorial/analyze";
-import { importSelectBenchRun } from "@aihot/backend/admin/selectbench";
+import { importSelectBenchRun, selectBenchDomains, summarizeSelectBench, type SelectBenchCase } from "@aihot/backend/admin/selectbench";
+import type { DomainKey } from "@aihot/contracts/taxonomy";
 
 const { values } = parseArgs({
   options: {
@@ -33,11 +34,14 @@ interface GoldRow {
   sourceFacts: { sourceKind: string; sourceTier?: string; firstParty?: boolean; language?: string | null };
   /** Optional: a split (e.g. development / holdout) and a stratum for reading the mistakes. */
   samplingContext?: { benchmarkSplit?: string; samplingStratum?: string };
-  gold: { decision: "select" | "reject" | "either" };
+  gold: { decision: "select" | "reject" | "either"; domains?: DomainKey[] };
 }
 
 const rows: GoldRow[] = readFileSync(path.resolve(REPO_ROOT, values.gold!), "utf8")
-  .split("\n").filter((l) => l.trim() && !l.trim().startsWith("//")).map((l) => JSON.parse(l));
+  .split("\n").filter((l) => l.trim() && !l.trim().startsWith("//")).map((l) => {
+    const r = JSON.parse(l) as GoldRow;
+    return { ...r, gold: { ...r.gold, domains: selectBenchDomains(r.gold.domains) } };
+  });
 
 // Deterministic stratified sample.
 function rng(seed: number) {
@@ -93,57 +97,12 @@ for (const model of values.models!.split(",")) {
       return { r, out: null, receiptIds: [] as number[], error: String(error).slice(0, 200) };
     }
   });
-  let tp = 0, fp = 0, fn = 0, tn = 0, either = 0, errors = 0;
-  const mistakes: Array<Record<string, unknown>> = [];
-  for (const x of results) {
-    if (!x.out) { errors++; continue; }
-    const pred = x.out.selected ? "select" : "reject";
-    const gold = x.r.gold.decision;
-    if (gold === "either") { either++; continue; }
-    if (pred === "select" && gold === "select") tp++;
-    else if (pred === "select" && gold === "reject") { fp++; mistakes.push({ kind: "FP", title: x.r.material.title, score: x.out.score, reason: x.out.reasonZh, stratum: x.r.samplingContext?.samplingStratum ?? null }); }
-    else if (pred === "reject" && gold === "select") { fn++; mistakes.push({ kind: "FN", title: x.r.material.title, score: x.out.score, relevance: x.out.relevance, stratum: x.r.samplingContext?.samplingStratum ?? null }); }
-    else tn++;
-  }
-  const receiptIds = results.flatMap((x) => x.receiptIds);
-  const [usage] = receiptIds.length
-    ? await sql<{ tin: number; tout: number; latency: number }[]>`
-        SELECT sum((usage->>'prompt_tokens')::int) AS tin, sum((usage->>'completion_tokens')::int) AS tout,
-               avg((response->>'_latencyMs')::int) AS latency
-        FROM receipts WHERE id IN ${sql(receiptIds)}`
-    : [{ tin: 0, tout: 0, latency: 0 }];
-  const precision = tp / Math.max(1, tp + fp);
-  const recall = tp / Math.max(1, tp + fn);
-  const f1 = (2 * precision * recall) / Math.max(1e-9, precision + recall);
-  const summary = {
-    model, n: sample.length, decisive: tp + fp + fn + tn, either, errors, tp, fp, fn, tn,
-    accuracy: +((tp + tn) / Math.max(1, tp + fp + fn + tn)).toFixed(3),
-    precision: +precision.toFixed(3), recall: +recall.toFixed(3), f1: +f1.toFixed(3),
-    selectedRate: +((tp + fp) / Math.max(1, tp + fp + fn + tn)).toFixed(3),
-    goldSelectRate: +((tp + fn) / Math.max(1, tp + fp + fn + tn)).toFixed(3),
-    tokensIn: Number(usage?.tin ?? 0), tokensOut: Number(usage?.tout ?? 0), avgLatencyMs: Math.round(Number(usage?.latency ?? 0)),
-    wallSeconds: Math.round((Date.now() - started) / 1000),
-  };
-  console.log(JSON.stringify(summary));
-  // Threshold sweep on the raw attention score (selection rule = relevance pass && score >= t).
-  const sweep: Array<Record<string, number>> = [];
-  for (let t = 40; t <= 90; t += 2) {
-    let a = 0, b = 0, c = 0, d = 0;
-    for (const x of results) {
-      if (!x.out || x.r.gold.decision === "either") continue;
-      const pred = x.out.relevance === "pass" && x.out.score !== null && x.out.score >= t;
-      const g = x.r.gold.decision === "select";
-      if (pred && g) a++; else if (pred) b++; else if (g) c++; else d++;
-    }
-    const P = a / Math.max(1, a + b), R = a / Math.max(1, a + c);
-    sweep.push({ t, acc: +((a + d) / Math.max(1, a + b + c + d)).toFixed(3), P: +P.toFixed(3), R: +R.toFixed(3), F1: +((2 * P * R) / Math.max(1e-9, P + R)).toFixed(3), sel: +((a + b) / Math.max(1, a + b + c + d)).toFixed(3) });
-  }
-  console.log(sweep.map((s) => `  t=${s.t} acc=${s.acc} P=${s.P} R=${s.R} F1=${s.F1} sel=${s.sel}`).join("\n"));
-  const cases = results.map((x) => ({
+  const cases: SelectBenchCase[] = results.map((x) => ({
     caseId: x.r.caseId,
     title: x.r.material.title,
     stratum: x.r.samplingContext?.samplingStratum ?? null,
     gold: x.r.gold.decision,
+    domains: x.r.gold.domains ?? [],
     decision: x.out ? (x.out.selected ? "select" : "reject") : null,
     score: x.out?.score ?? null,
     relevance: x.out?.relevance ?? null,
@@ -152,6 +111,23 @@ for (const model of values.models!.split(",")) {
     receiptId: x.receiptIds[0] ?? null,
     error: x.error,
   }));
+  const { summary: selectionSummary, sweep } = summarizeSelectBench(cases);
+  const mistakes = cases.filter((c) => c.decision !== null && c.gold !== "either" && c.decision !== c.gold)
+    .map((c) => ({ ...c, kind: c.decision === "select" ? "FP" : "FN" }));
+  const receiptIds = results.flatMap((x) => x.receiptIds);
+  const [usage] = receiptIds.length
+    ? await sql<{ tin: number; tout: number; latency: number }[]>`
+        SELECT sum((usage->>'prompt_tokens')::int) AS tin, sum((usage->>'completion_tokens')::int) AS tout,
+               avg((response->>'_latencyMs')::int) AS latency
+        FROM receipts WHERE id IN ${sql(receiptIds)}`
+    : [{ tin: 0, tout: 0, latency: 0 }];
+  const summary = {
+    model, ...selectionSummary,
+    tokensIn: Number(usage?.tin ?? 0), tokensOut: Number(usage?.tout ?? 0), avgLatencyMs: Math.round(Number(usage?.latency ?? 0)),
+    wallSeconds: Math.round((Date.now() - started) / 1000),
+  };
+  console.log(JSON.stringify(summary));
+  console.log(sweep.map((s) => `  t=${s.t} n=${s.n} decisive=${s.decisive} status=${s.status} acc=${s.acc} P=${s.P} R=${s.R} F1=${s.F1} sel=${s.sel}`).join("\n"));
   report[model] = { summary, sweep, mistakes, cases };
 }
 const outDir = path.join(REPO_ROOT, ".data/eval");

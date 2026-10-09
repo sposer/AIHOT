@@ -2,6 +2,7 @@ import { SITE } from "@aihot/industry/site";
 import { useRef } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/selectbench";
+import type { ModelSummary } from "./selectbench-run";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj, num, pct } from "../../features/admin/format";
@@ -15,7 +16,7 @@ interface RunRow {
   sample_size: number;
   prompt_version: string | null;
   models: string[];
-  summary: Record<string, Record<string, number>>;
+  summary: Record<string, ModelSummary>;
   created_at: string;
   imported_by: string | null;
   cases: number;
@@ -60,7 +61,11 @@ export default function SelectBench({ loaderData }: Route.ComponentProps) {
       {loaderData.runs.length ? (
         <div className="space-y-4">
           {loaderData.runs.map((r) => {
-            const best = [...r.models].sort((a, b) => (r.summary[b]?.f1 ?? 0) - (r.summary[a]?.f1 ?? 0))[0];
+            const ranked = r.models.filter((m) => {
+              const s = r.summary[m];
+              return s && (s.decisive ?? 0) > 0 && typeof s.f1 === "number" && Number.isFinite(s.f1);
+            }).sort((a, b) => r.summary[b]!.f1! - r.summary[a]!.f1!);
+            const best = ranked.length > 1 ? ranked[0] : undefined;
             return (
               <Card
                 key={r.id}
@@ -69,25 +74,33 @@ export default function SelectBench({ loaderData }: Route.ComponentProps) {
                 pad={false}
               >
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] text-[13px]">
+                  <table className="w-full min-w-[940px] text-[13px]">
                     <thead>
                       <tr className="border-b border-line text-left text-[12px] text-ink-3">
-                        {["模型", "准确率", "精确率", "召回率", "F1", "入选比例", "金标入选", "失败", "平均耗时", "输入/输出 tokens"].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}
+                        {["模型", "n / 决定性", "状态", "准确率", "精确率", "召回率", "F1", "入选比例", "金标入选", "失败", "平均耗时", "输入/输出 tokens"].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}
                       </tr>
                     </thead>
                     <tbody>
                       {r.models.map((m) => {
                         const s = r.summary[m] ?? {};
+                        const noSamples = s.n === 0 || s.status === "no_samples";
+                        const noDecisive = noSamples || s.decisive === 0 || s.status === "no_decisive_samples";
+                        const rates: ModelSummary = noDecisive ? {} : s;
                         return (
                           <tr key={m} className="border-b border-line/70 last:border-0">
-                            <td className="px-3 py-2 font-medium text-ink">{m} {m === best && r.models.length > 1 && <Badge tone="accent">F1 最高</Badge>}</td>
-                            <td className="num px-3 py-2">{pct(s.accuracy)}</td>
-                            <td className="num px-3 py-2">{pct(s.precision)}</td>
-                            <td className="num px-3 py-2">{pct(s.recall)}</td>
-                            <td className="num px-3 py-2 font-semibold text-ink">{pct(s.f1)}</td>
-                            <td className="num px-3 py-2">{pct(s.selectedRate)}</td>
-                            <td className="num px-3 py-2">{pct(s.goldSelectRate)}</td>
-                            <td className="num px-3 py-2">{s.errors ? <span className="text-hot">{s.errors}</span> : 0}</td>
+                            <td className="px-3 py-2 font-medium text-ink">{m} {m === best && <Badge tone="accent">F1 最高</Badge>}</td>
+                            <td className="num px-3 py-2">{num(s.n ?? r.sample_size)} / {num(s.decisive)}</td>
+                            <td className="px-3 py-2 text-[12px] text-ink-3">
+                              <div>{noSamples ? "无样本" : noDecisive ? "无决定性样本" : s.decisive === undefined ? "决定性样本未记录" : "有决定性样本"}</div>
+                              <div className="mt-0.5 text-ink-4">{s.domainAnnotated ? `人工领域标注 ${num(s.domainAnnotated)} 条` : "无领域人工标注"}</div>
+                            </td>
+                            <td className="num px-3 py-2">{pct(rates.accuracy)}</td>
+                            <td className="num px-3 py-2">{pct(rates.precision)}</td>
+                            <td className="num px-3 py-2">{pct(rates.recall)}</td>
+                            <td className="num px-3 py-2 font-semibold text-ink">{pct(rates.f1)}</td>
+                            <td className="num px-3 py-2">{pct(rates.selectedRate)}</td>
+                            <td className="num px-3 py-2">{pct(rates.goldSelectRate)}</td>
+                            <td className="num px-3 py-2">{s.errors ? <span className="text-hot">{num(s.errors)}</span> : num(s.errors)}</td>
                             <td className="num px-3 py-2">{s.avgLatencyMs ? `${(s.avgLatencyMs / 1000).toFixed(1)}s` : "—"}</td>
                             <td className="num px-3 py-2 text-ink-3">{num(s.tokensIn)} / {num(s.tokensOut)}</td>
                           </tr>

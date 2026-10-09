@@ -120,7 +120,8 @@ export function registerAdmin(app: FastifyInstance) {
   app.get("/api/admin/selectbench", adminHandler(async () => ({ runs: await listSelectBenchRuns() })));
   app.get("/api/admin/selectbench/:id", adminHandler(async (req, reply) => {
     const f = q(req);
-    return orNotFound(req, reply, await selectBenchRun(param(req, "id"), { model: f.model, outcome: f.outcome, stratum: f.stratum, disagree: f.disagree === "1" }));
+    if (f.domain !== undefined && !isDomainKey(f.domain)) throw Object.assign(new Error("invalid domain"), { statusCode: 400 });
+    return orNotFound(req, reply, await selectBenchRun(param(req, "id"), { domain: f.domain, model: f.model, outcome: f.outcome, stratum: f.stratum, disagree: f.disagree === "1" }));
   }));
   app.post("/api/admin/selectbench/import", adminHandler(async (req, _reply, admin) => {
     const b = body<{ label: string; report: unknown }>(req);

@@ -1,7 +1,7 @@
 import { SITE } from "@aihot/industry/site";
 import { Fragment, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
+import { CATEGORY_LABELS, DOMAIN_KEYS, DOMAIN_LABELS, type DomainKey } from "@aihot/contracts/taxonomy";
 import type { Route } from "./+types/selectbench-run";
 import { adminGet } from "../../lib/admin.server";
 import { bj, num, pct } from "../../features/admin/format";
@@ -16,10 +16,51 @@ interface Decision {
   error: string | null;
   receiptId: number | null;
 }
+interface Metrics {
+  n: number;
+  decisive: number;
+  either: number;
+  errors: number;
+  status: "ok" | "no_samples" | "no_decisive_samples";
+  tp: number;
+  fp: number;
+  fn: number;
+  tn: number;
+  accuracy: number | null;
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
+  selectedRate: number | null;
+  goldSelectRate: number | null;
+}
+interface ThresholdTrial {
+  t: number;
+  n?: number;
+  decisive?: number;
+  either?: number;
+  errors?: number;
+  status?: Metrics["status"];
+  acc: number | null;
+  P: number | null;
+  R: number | null;
+  F1: number | null;
+  sel: number | null;
+}
+export interface ModelSummary extends Partial<Metrics> {
+  model?: string;
+  domainAnnotated?: number;
+  byDomain?: Partial<Record<DomainKey, Metrics & { sweep: ThresholdTrial[] }>> | null;
+  sweep?: ThresholdTrial[];
+  tokensIn?: number;
+  tokensOut?: number;
+  avgLatencyMs?: number;
+  wallSeconds?: number;
+}
 interface Data {
-  run: { id: string; label: string; split: string | null; sample_size: number; prompt_version: string | null; models: string[]; summary: Record<string, Record<string, number>>; created_at: string };
-  rows: Array<{ case_id: string; title: string; stratum: string | null; gold: "select" | "reject" | "either"; by_model: Record<string, Decision> }>;
+  run: { id: string; label: string; split: string | null; sample_size: number; prompt_version: string | null; models: string[]; summary: Record<string, ModelSummary>; created_at: string };
+  rows: Array<{ case_id: string; title: string; stratum: string | null; gold: "select" | "reject" | "either"; domains: DomainKey[]; by_model: Record<string, Decision> }>;
   strata: Array<{ stratum: string | null; n: number }>;
+  domain: DomainKey | null;
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -32,7 +73,7 @@ const GOLD: Record<string, [string, "accent" | "muted" | "info"]> = { select: ["
 
 function verdict(d: Decision | undefined, gold: string) {
   if (!d) return <span className="text-ink-4">—</span>;
-  if (d.decision === null) return <Badge tone="bad" title={d.error ?? undefined}>失败</Badge>;
+  if (d.decision === null || d.error != null) return <Badge tone="bad" title={d.error ?? undefined}>失败</Badge>;
   const right = gold === "either" || d.decision === gold;
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -42,11 +83,22 @@ function verdict(d: Decision | undefined, gold: string) {
   );
 }
 
+function metricState(s: Partial<Metrics> | undefined, domain: DomainKey | null) {
+  if (!s || s.n === 0) return domain ? "无领域人工标注" : "无样本";
+  if (s.decisive === 0) return "无决定性样本";
+  return null;
+}
+
 export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) {
   const [sp] = useSearchParams();
   const navigate = useNavigate();
   const [open, setOpen] = useState<string | null>(null);
   const model = sp.get("model") ?? d.run.models[0]!;
+  const domain = d.domain;
+  const scope = domain ? DOMAIN_LABELS[domain] : "总体（含未标注）";
+  const summary = (m: string) => domain ? d.run.summary[m]?.byDomain?.[domain] : d.run.summary[m];
+  const current = summary(model);
+  const sweep = current?.sweep ?? [];
   const set = (k: string, v: string | null) => {
     const next = new URLSearchParams(sp);
     if (v) next.set(k, v);
@@ -58,15 +110,28 @@ export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) 
       title={d.run.label}
       subtitle={<>{bj(d.run.created_at, true)} · {d.run.split ?? "—"} · {num(d.run.sample_size)} 条 · 提示 {d.run.prompt_version ?? "未记录"} · <Link className="text-accent" to="/admin/selectbench">全部运行</Link></>}
     >
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <label className="inline-flex items-center gap-2 text-[13px] text-ink-2">
+          人工领域
+          <Select className="!w-auto" value={domain ?? ""} onChange={(e) => set("domain", e.target.value || null)}>
+            <option value="">总体（含未标注）</option>
+            {DOMAIN_KEYS.map((key) => <option key={key} value={key}>{DOMAIN_LABELS[key]}</option>)}
+          </Select>
+        </label>
+        <span className="text-[12.5px] text-ink-3">指标与样本范围：{scope} · 下方结果与分层筛选只缩小样本列表</span>
+      </div>
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {d.run.models.map((m) => {
-          const s = d.run.summary[m] ?? {};
+          const s = summary(m);
+          const state = metricState(s, domain);
           return (
-            <button key={m} onClick={() => set("model", m)} className={`rounded-panel p-4 text-left ring-1 transition-colors ${m === model ? "bg-accent-softer ring-accent/40" : "bg-surface ring-line hover:bg-bg-sunk/60"}`}>
+            <button key={m} aria-pressed={m === model} onClick={() => set("model", m)} className={`rounded-panel p-4 text-left ring-1 transition-colors ${m === model ? "bg-accent-softer ring-accent/40" : "bg-surface ring-line hover:bg-bg-sunk/60"}`}>
               <div className="text-[13.5px] font-semibold text-ink">{m}</div>
-              <div className="num mt-1.5 text-[22px] font-semibold tracking-tight text-ink">F1 {pct(s.f1)}</div>
-              <div className="num mt-0.5 text-[12px] text-ink-3">准确 {pct(s.accuracy)} · 精确 {pct(s.precision)} · 召回 {pct(s.recall)}</div>
-              <div className="num mt-0.5 text-[12px] text-ink-4">误选 {s.fp ?? "—"} · 漏选 {s.fn ?? "—"} · 失败 {s.errors ?? 0}</div>
+              <div className={`num mt-1.5 font-semibold tracking-tight text-ink ${state ? "text-[16px]" : "text-[22px]"}`}>{state ?? `F1 ${pct(s?.f1)}`}</div>
+              {!state && <div className="num mt-0.5 text-[12px] text-ink-3">准确 {pct(s?.accuracy)} · 精确 {pct(s?.precision)} · 召回 {pct(s?.recall)}</div>}
+              <div className="num mt-1 text-[12px] text-ink-3">n {num(s?.n ?? (domain ? 0 : d.run.sample_size))} · 决定性 {num(s?.decisive)} · 两可 {num(s?.either)} · 失败 {num(s?.errors)}</div>
+              <div className="num mt-0.5 text-[12px] text-ink-4">误选 {s?.fp ?? "—"} · 漏选 {s?.fn ?? "—"}</div>
+              {!domain && <div className="mt-0.5 text-[12px] text-ink-4">{d.run.summary[m]?.domainAnnotated ? `人工领域标注 ${num(d.run.summary[m]?.domainAnnotated)} 条` : "无领域人工标注"}</div>}
             </button>
           );
         })}
@@ -113,7 +178,10 @@ export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) 
                         <div className="line-clamp-2 text-ink">{r.title}</div>
                         <div className="mt-0.5 text-[11.5px] text-ink-4">{r.stratum ?? "—"} · {r.case_id}</div>
                       </td>
-                      <td className="px-3 py-2.5"><Badge tone={GOLD[r.gold]?.[1] ?? "muted"}>{GOLD[r.gold]?.[0] ?? r.gold}</Badge></td>
+                      <td className="px-3 py-2.5">
+                        <Badge tone={GOLD[r.gold]?.[1] ?? "muted"}>{GOLD[r.gold]?.[0] ?? r.gold}</Badge>
+                        <div className="mt-1 text-[12px] leading-relaxed text-ink-3">人工领域：{r.domains.map((key) => DOMAIN_LABELS[key]).join(" · ") || "未标注"}</div>
+                      </td>
                       {d.run.models.map((m) => <td key={m} className="px-3 py-2.5">{verdict(r.by_model[m], r.gold)}</td>)}
                     </tr>
                     {open === r.case_id && (
@@ -142,6 +210,32 @@ export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) 
         ) : (
           <Empty>没有符合条件的样本</Empty>
         )}
+      </Card>
+      <Card title={`门槛试算 · ${scope} · ${model}`} className="mt-4" pad={false}>
+        {metricState(current, domain) ? <Empty>{metricState(current, domain)}，没有可评估的门槛结果</Empty> : sweep.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[540px] text-[13px]">
+              <thead>
+                <tr className="border-b border-line text-left text-[12px] text-ink-3">
+                  {["门槛", "决定性样本", "准确率", "精确率", "召回率", "F1", "入选比例"].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {sweep.map((s) => (
+                  <tr key={s.t} className="num border-b border-line/70 last:border-0">
+                    <td className="px-3 py-2">{s.t}</td>
+                    <td className="px-3 py-2">{num(s.decisive ?? current?.decisive)}</td>
+                    <td className="px-3 py-2">{pct(s.acc)}</td>
+                    <td className="px-3 py-2">{pct(s.P)}</td>
+                    <td className="px-3 py-2">{pct(s.R)}</td>
+                    <td className="px-3 py-2">{pct(s.F1)}</td>
+                    <td className="px-3 py-2">{pct(s.sel)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty>这次运行未记录门槛试算</Empty>}
       </Card>
     </AdminPage>
   );

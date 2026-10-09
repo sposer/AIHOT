@@ -32,7 +32,7 @@ export const SELECTION = {
 从你自己的信源里挑 100–200 条资料，一条一条标“该选 / 不该选”，存成 `.data/gold.jsonl`（`.data/` 不进 Git）。每行一条：
 
 ```json
-{"caseId":"law-001","material":{"title":"原文标题","originalTitle":null,"publishedAt":"2026-10-01T09:00:00+08:00","sourceName":"信源名称","bodyZh":null,"bodyOriginal":"正文……"},"sourceFacts":{"sourceKind":"rss","sourceTier":"T1","firstParty":true,"language":"zh"},"samplingContext":{"benchmarkSplit":"development","samplingStratum":"regulation"},"gold":{"decision":"select"}}
+{"caseId":"law-001","material":{"title":"原文标题","originalTitle":null,"publishedAt":"2026-10-01T09:00:00+08:00","sourceName":"信源名称","bodyZh":null,"bodyOriginal":"正文……"},"sourceFacts":{"sourceKind":"rss","sourceTier":"T1","firstParty":true,"language":"zh"},"samplingContext":{"benchmarkSplit":"development","samplingStratum":"regulation"},"gold":{"decision":"select","domains":["legal","policy"]}}
 ```
 
 | 字段 | 说明 |
@@ -41,9 +41,10 @@ export const SELECTION = {
 | `material` | 标题、原标题、发布时间、信源名、正文（中文正文放 `bodyZh`，原文放 `bodyOriginal`，有一个就行） |
 | `sourceFacts` | 信源类型、分级、是否一手、语言。分级决定用哪个门槛 |
 | `samplingContext` | 可选。`benchmarkSplit` 分开发集和留出集，`samplingStratum` 是你自己的分组（比如“新规”“判决”“营销”），看错在哪一类 |
-| `gold.decision` | `select` 该选，`reject` 不该选，`either` 两可（不计入准确率） |
+| `gold.decision` | `select` 该选，`reject` 不该选，`either` 两可（不进入决定性指标） |
+| `gold.domains` | 可选。使用者按该篇内容人工标注的领域数组；可以多领域，缺省或 `[]` 表示未标注。身份使用 [`DOMAIN_KEYS`](../packages/contracts/src/taxonomy.ts) 中全部已注册的领域，包括已停用身份；`all` 不是领域 |
 
-`industry/gold.example.jsonl` 有两条示例。
+领域金标不是信源覆盖范围，也不是模型预测；不能用 `sourceFacts`、标题关键词或结构化结果代替人工标注。未标注的样本仍参加总体评估，但不进入任何领域子集。`industry/gold.example.jsonl` 有两条未标注领域的示例，不代表任何领域已完成校准。
 
 几条建议：
 
@@ -57,17 +58,27 @@ export const SELECTION = {
 node --env-file=.env scripts/eval-selection.ts --gold .data/gold.jsonl --split development --label "第一版评分标准"
 ```
 
-对每条样本跑一遍预筛和两次评分，输出：
+对每条样本只跑预筛和两次评分，不为领域评估额外调用结构化或写作模型，输出：
 
-- 准确率、查准率（选出来的有多少是对的）、查全率（该选的有多少选上了）；
-- 门槛从 40 到 90 每隔 2 分，各自会得到什么结果；
-- 判错的条目，完整报告写到 `.data/eval/`，同时导入后台 SelectBench。
+- 总体及人工标注领域子集的准确率、查准率（选出来的有多少是对的）、查全率（该选的有多少选上了）、F1 和入选比例；
+- 总体及各领域的门槛试算：从 40 到 90 每隔 2 分，按“相关性通过且分数 ≥ 门槛”计算，不改变站点当前门槛与权重；
+- 每条结果及错例保留完整人工 `domains`，报告仍为 `{ meta, models }`，写到 `.data/eval/`，同时导入后台 SelectBench。
+
+统计由 [`admin/selectbench.ts`](../packages/backend/src/admin/selectbench.ts) 统一计算，脚本和报告导入共用它；每个模型的总体指标在 `summary`，按域指标与 sweep 在 `summary.byDomain[domain]`，总体 sweep 在模型报告的 `sweep`。多领域样本在每个所属子集各计一次，总体只计一次，因此不能把领域子集数量相加当作总体数量。`summary.domainAnnotated` 是至少标注一个领域的样本数；调用用量和耗时只记录在总体，不按领域重复分摊。
+
+每组指标的 `n` 包含全部样本：成功且金标为 `select` / `reject` 的样本进入 `decisive` 和 TP / FP / FN / TN；成功的 `either` 样本单列；失败样本进入 `errors`，不作为误选或漏选，也不进入门槛试算的决定性指标。失败优先分类，所以 `n = decisive + either + errors`。没有样本时 `status` 为 `no_samples`；有样本但决定性样本为 0 时为 `no_decisive_samples`。这两种状态的准确率、查准率、查全率、F1 与入选比例为 `null`，不是“已验证的 0%”。各领域即使有数字，也只说明这批人工样本的结果，不等于该领域已经校准通过。
 
 常用参数：`--models default,deepseek-flash` 同批比较几个模型，`--n 200` 最多抽多少条，`--split holdout` 只跑留出集。同样的输入和提示词再跑不会重复调用模型（有回执复用），只有改过的部分才会产生新调用。
 
 ### 3. 看错例，改标准，再跑
 
-在后台 SelectBench 里逐条看判错的资料和模型给的理由：
+在后台 SelectBench 打开一次运行，选择“人工领域”：指标、当前模型的门槛试算和逐条样本使用同一领域上下文。总体包含未标注样本；领域视图只包含该领域的人工标注。仍可组合模型、误选 / 漏选 / 两可 / 失败、样本分层和模型分歧筛选；这些次级筛选只缩小样本列表，不重算该领域的整组指标。金标列始终展示完整人工领域数组，而不是只显示当前筛选的那个领域。
+
+运行列表也显示 `n`、决定性样本数及未评估状态；“F1 最高”只在至少两个模型有决定性样本、且 F1 为有限数字时比较，不把 `null` 或缺失记录当作 0 排名。历史总体数字仍可读取。
+
+已保存的历史逐条结果没有领域标签时为 `[]`；历史汇总没有领域信息时显示“无领域人工标注”，不推测回填，也不显示为领域已验证的 0%。需要领域校准时，由使用者标注 gold 后产生并导入新报告。导入时会校验已注册领域身份，同一 case 在各模型间必须保留相同人工金标；所有提供 `cases` 数组的模型必须具有相同 `caseId` 集合，数组顺序可以不同。缺少逐条结果的历史 summary-only 模型保留原汇总，不参与集合校验，也不补造缺失决定或领域。有逐条结果的报告按这些结果重新计算指标，保证保存的汇总和可浏览样本一致。
+
+逐条看判错的资料和模型给的理由：
 
 - 该选没选上，多半是评分标准里没说清它为什么重要：在 `selection-score.md` 里把这类价值写进“必须正常评价”的部分，给出例子。
 - 不该选却选上了，多半是噪声没压住：写进“必须压住”的部分。

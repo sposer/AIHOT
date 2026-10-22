@@ -1,10 +1,17 @@
 # One image for every role: setup (migrations and seed), api, worker and web.
 # Build arg NPM_REGISTRY switches the npm registry (e.g. https://registry.npmmirror.com in mainland China).
-FROM node:24-trixie-slim AS base
+FROM node:26.12.1-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS base
 WORKDIR /app
-# pg_dump for the optional database backups (Debian's client matches the PostgreSQL 17 server in compose).
+# decision: use PGDG's PostgreSQL 18 client for backups; not trixie's default client because
+# pg_dump 17 cannot dump the PostgreSQL 18 server defined in compose.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends postgresql-client ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates=20250419+deb13u1 curl \
+ && install -d /usr/share/postgresql-common/pgdg \
+ && curl --fail --silent --show-error -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && printf '%s\n' 'Types: deb' 'URIs: https://apt.postgresql.org/pub/repos/apt' 'Suites: trixie-pgdg' 'Components: main' 'Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc' > /etc/apt/sources.list.d/pgdg.sources \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends postgresql-client-18 \
+ && apt-get purge -y --auto-remove curl \
  && rm -rf /var/lib/apt/lists/*
 
 FROM base AS build

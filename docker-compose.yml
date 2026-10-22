@@ -20,14 +20,15 @@ x-app: &app
 
 services:
   db:
-    image: ${DB_IMAGE:-postgres:17-alpine}
+    image: ${DB_IMAGE:-postgres:18.6-alpine3.24@sha256:83148c0bc09eac4d598b70a61e1404d0212b76c95c504bfd6c81a4c59ec91792}
     restart: unless-stopped
     environment:
       POSTGRES_USER: aihot
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aihot}
       POSTGRES_DB: aihot
+    # PostgreSQL 18 uses /var/lib/postgresql/18/docker; existing clusters require the migration in docs/deploy.md.
     volumes:
-      - db:/var/lib/postgresql/data
+      - db:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aihot -d aihot"]
       interval: 5s
@@ -72,7 +73,7 @@ services:
         condition: service_started
 
   caddy:
-    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    image: ${CADDY_IMAGE:-caddy:2.11.7-alpine@sha256:24ec7b05bc532c7bb57f727030c5056e257ff7138b4b50460306819ff79362bd}
     profiles: ["https"]
     restart: unless-stopped
     ports:

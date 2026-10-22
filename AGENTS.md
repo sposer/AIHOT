@@ -20,7 +20,7 @@
 
 ## 检查与交付
 
-- 使用 Node.js 24.11+ 直接运行 TypeScript，项目依赖由 npm workspaces 管理。
+- 使用 Node.js 26.12.1+ 直接运行 TypeScript，项目依赖由 npm workspaces 管理。
 - 改完必须运行类型检查、完整后端测试、Web 构建及 Web 测试，并在站点运行后执行 smoke。实际命令以根目录及 workspace manifests 为准；操作流程见 README 和 [docs/deploy.md](docs/deploy.md)。
 - 验证受影响的重要行为；测试数据库名须以 `_test` 或 `_ci` 结尾。改行业词表时，同步更新使用示范行业数据的测试样例。
 - 匹配周围代码风格，保持改动最小；不为简单样式改动加测试。不要提交 `.env`、密钥或 `.data/`，不要把 AIHOT 的名字或 Logo 用作站点品牌。

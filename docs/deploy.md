@@ -57,27 +57,17 @@ docker compose --env-file .env --env-file images.env exec -T web \
 
 ### 数据库初始化与迁移
 
-新库由 `database/migrations/0001_core.sql` 直接建立完整应用结构和默认预算。行业主题和示范信源由 `scripts/seed.ts` 独立导入；pg-boss 的队列表由它自己在 `pgboss` schema 中管理。
+当前版本以全新数据库为起点，只保留 `database/migrations/0001_core.sql` 这一份初始基线，直接建立当前应用结构和默认预算，不创建重置监控、模型榜及专属汇率表。领域数组、按 `(kind, scope, key)` 标识的报告和 SelectBench 人工领域标注已包含在基线中；领域身份由行业 taxonomy 的应用边界验证。
 
-`scripts/migrate.ts` 按编号顺序执行 SQL，每份迁移和它的 `schema_migrations` 记录在同一事务中提交，已执行的文件不会重跑。`setup` 完成迁移和 seed 后，API 和 worker 才启动。
+行业主题和示范信源由 `scripts/seed.ts` 独立导入；pg-boss 的队列表由它自己在 `pgboss` schema 中管理。
 
-首次真实部署后固定初始基线，后续数据库变更只在 `database/migrations/` 末尾按编号追加增量迁移；变更的当前应用契约与迁移一起部署，不修改已执行的基线。
+`scripts/migrate.ts` 按编号顺序执行 SQL，每份迁移和它的 `schema_migrations` 记录在同一事务中提交，已执行的文件不会重跑。`setup` 完成迁移和 seed 后，API 和 worker 才启动。后续数据库变更从 `0002` 起按编号追加增量迁移，和对应应用契约一起部署，不修改已执行的基线。
 
-`0003_remove_monitor.sql` 删除重置监控的四张专属表、专属模型设置及旧告警状态，不修改通用运维功能。付费调用、内容投递回执和审计记录保留在共享历史表中，仍按[回执边界](architecture.md#几条不变的规则)处理。部署方须在升级前停止旧 API 和 worker，并为监控数据保留升级前数据库快照；运行 setup 和新应用后，worker 的调度同步会取消旧监控任务。专属监控数据随迁移删除；若要恢复，必须在当次更新验证完成前同时恢复快照和旧应用。验证成功后清理当次快照。
-
-`0002_domains.sql` 将既有信源、分析、公开投影及精选同步 payload 一次性赋为 AI；文章 ID、现有 revision、事实和故事 ID 保持不变。新分析按 `input_revision` 产出文章领域，人工纠正由 editorial override 持有。信源的 `domains` 只说明覆盖范围，不决定文章归属。日报、周报和月报改为 `(kind, scope, key)` 唯一身份：既有报告属于 `ai`，历史修订仍通过原 `report_id` 关联；`all` 概览不复制 AI 报告，由同一报告生产与补报路径独立生成。迁移不修改 `0001_core.sql`；完成后应用只读写这一套契约，不保留 runtime fallback，报告详情使用 `/:kind/:scope/:key`。
-
-部署这次变更前由部署方暂停旧 API 和 worker，在当次更新期间保留数据库快照，再执行 setup、新应用及验证。验证成功后清理该次快照，不长期保留生产回退目录。若验证完成前需要退回旧应用，必须同时恢复部署前数据库快照和上一版消费文件，不能只换回旧镜像：旧应用只认识 `(kind, key)`，无法正确处理迁移后的多范围报告。恢复快照会舍弃快照之后的写入，部署方应先保留这段数据供核对。
-
-`0004_configurable_domains.sql` 解除信源、分析、公开投影和报告内固定五领域的数据库约束，领域合法身份统一由行业 taxonomy 的应用边界验证；不修改存量行、文章 revision、报告 ID 或同步 ledger。新增与停用领域按[定制流程](customize.md#领域新增与停用)操作，不为每次配置变化另加数据库枚举迁移。升级由部署方停止旧 API 和 worker、执行 setup，再启动消费同一份配置的新应用；已有历史 key 不删除、不重命名。
-
-`0005_selectbench_domains.sql` 为逐条评测结果增加人工领域数组，历史结果保持未标注的 `[]`，不按信源覆盖或模型结果补填。随当前评测代码通过 setup 应用；领域金标、统计状态及历史报告的使用边界见[精选与校准](selection.md#校准)。
-
-`0006_remove_leaderboard.sql` 删除模型榜的全部专属表（含仅供模型价格换算的 `fx_rates`）、抓取状态设置及旧告警状态，不修改资讯、报告和通用运维数据。升级前停止旧 API 和 worker 并保留当次数据库快照；运行 setup 和新应用后，worker 的调度同步会取消旧模型榜任务。模型榜数据随迁移删除；若要恢复，必须在当次更新验证完成前同时恢复快照和旧应用。验证成功后清理当次快照。
-
-升级后的短暂排行窗口由已有任务自然收敛：旧应用写入的 `hot_rankings` 快照只存全球 Top 10，更新后领域视图先从该旧快照中筛公开成员；同一现存排行任务下一次计算才会把所有全球达标候选写入快照，之后各领域即可从完整候选中过滤、选代表并取 Top 10。无需兼容代码、额外迁移或新增刷新机制。
+本次基线重置不提供旧迁移链的原地升级路径，也不会自动删库、清表或重置迁移记录。已有实例切换到这份基线时，由部署方停止旧应用、保留旧数据库和消费文件，另建空库后运行 setup 与新应用，再执行 smoke；确需保留旧业务数据时，单独安排数据迁移，不直接复用旧库的 `schema_migrations`。验证完成前需要回退时，恢复旧数据库连接及匹配的旧应用。
 
 #### PostgreSQL 17 升级到 18
+
+本节只处理同一应用结构的数据库引擎升级，不转换应用基线；应用库的初始化要求见[数据库初始化与迁移](#数据库初始化与迁移)。
 
 这是持久数据的大版本边界，不是应用 SQL 迁移。当前 Compose 保留 `db`、`data`、`caddy` 三个卷的身份；按照[官方 PostgreSQL 镜像契约](https://github.com/docker-library/docs/blob/master/postgres/README.md#pgdata)，`db` 卷的挂载目标改为 `/var/lib/postgresql`，18 的 `PGDATA` 是 `/var/lib/postgresql/18/docker`。原 17 卷根目录中的数据不会自动变成 18 数据，也不能只换 tag 或把旧目录挂到新路径后启动。
 

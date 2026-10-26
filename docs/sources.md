@@ -84,7 +84,7 @@ RSS、RDF 的 `content:encoded` 和 Atom 的 `content` 默认作为正文候选�
 
 ## 网络出口与复杂站点
 
-`EGRESS_PROXY_URL` 是整个部署唯一的固定出站代理，适合解决服务器到海外公开内容的网络可达性。RSS、网页和 JSON 采集、正文与图片下载、模型榜数据及 Jina Reader 请求共用它和现有连接池；模型 API 不经过它，SocialData 与极致了调用保持 `direct` 路由。系统不读取代理列表，也不会逐请求更换 IP。
+`EGRESS_PROXY_URL` 是整个部署唯一的固定出站代理，适合解决服务器到海外公开内容的网络可达性。RSS、网页和 JSON 采集、正文与图片下载及 Jina Reader 请求共用它和现有连接池；模型 API 不经过它，SocialData 与极致了调用保持 `direct` 路由。系统不读取代理列表，也不会逐请求更换 IP。
 
 先按下面的边界选择采集方式：
 

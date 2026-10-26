@@ -47,7 +47,7 @@ flowchart LR
 
 - 精选首页用 `/?domain=:domain`，动态用 `/all/:domain`，热点、事件与主题用查询参数 `domain`。精选列表与首页热点条按同一主领域读取。省略领域的内容入口是实际概览；本地偏好不会过滤或重定向这些入口。报告路径沿用上面的范围身份。
 - 桌面侧栏与移动页头复用一个 `DomainSwitcher`，不在各页面重复领域栏。公共主标题保持固定，领域作为导航上下文；精选与动态的子栏目来自 taxonomy 的展示预设，组合现有单值 `category`、`tag`、`channel` 筛选。配置方法见[定制说明](customize.md)。
-- URL 中的范围优先。只有显式切换才保存浏览器偏好；没有显式范围的全局对象和说明页用偏好生成导航目标。站内页面链接携带范围上下文，但文章和模型榜等全局数据不因此复制或过滤，canonical 保持对象自身身份。存储不可用时仍按 URL 正常导航。
+- URL 中的范围优先。只有显式切换才保存浏览器偏好；没有显式范围的全局对象和说明页用偏好生成导航目标。站内页面链接携带范围上下文，但文章等全局数据不因此复制或过滤，canonical 保持对象自身身份。存储不可用时仍按 URL 正常导航。
 - 换领域保留页面家族、搜索词与排序，只清理目标子栏目不支持的次级筛选并重置分页。事件和主题继续打开当前对象，报告详情转到同类最新一期，归档保留归档角色。重选当前领域不导航，不改变筛选、页码、锚点或报告期数。
 - 临时不可用留在原 URL，由共用错误边界显示重试；重试重新执行当前页面的 loader，不跳转到独立错误页，也不丢失领域与查询参数。
 
@@ -66,7 +66,6 @@ flowchart LR
 | `packages/backend/src/notify/` | 飞书推送 |
 | `packages/backend/src/operations/` | 告警、备份、清理、IndexNow |
 | `packages/backend/src/admin/` | 后台接口 |
-| `packages/backend/src/leaderboard/` | 模型榜（见 [模型榜](leaderboard.md)） |
 | `apps/web/app/routes/` | 每个页面一个文件，`routes.ts` 是路由表 |
 | `database/migrations/` | 完整初始基线和编号增量迁移，由 `scripts/migrate.ts` 执行 |
 | `scripts/` | 初始化、迁移、种子数据、评测、检查脚本 |

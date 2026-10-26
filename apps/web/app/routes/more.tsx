@@ -1,11 +1,10 @@
 import { SITE } from "@aihot/industry/site";
-import { FEATURES } from "@aihot/industry/features";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { pageMeta } from "../lib/seo";
 import { ThemeSwitch } from "../components/shell/ThemeSwitch";
 import { useDomainNavigation } from "../components/shell/nav";
-import { IconBookmark, IconChart, IconChevronRight, IconFlame, IconGrid, IconHeart, IconHistory, IconMessage, IconMoon, IconPlug } from "../components/icons";
+import { IconBookmark, IconChevronRight, IconFlame, IconGrid, IconHeart, IconHistory, IconMessage, IconMoon, IconPlug } from "../components/icons";
 
 /** Shared caches may keep this page for five minutes. */
 export function headers() {
@@ -23,7 +22,6 @@ const GROUPS: Array<{ title: string; rows: Row[] }> = [
     title: "内容",
     rows: [
       { to: "/topics", label: "主题索引", icon: <IconGrid size={18} /> },
-      ...(FEATURES.leaderboard ? [{ to: "/leaderboard", label: "模型榜", icon: <IconChart size={18} /> }] : []),
       { to: "/agent", label: "Agent 接入", icon: <IconPlug size={18} /> },
     ],
   },

@@ -1,6 +1,5 @@
 // /llms.txt — generated from the site's own configuration; only real, available resources are listed.
 import { SITE, withSubject } from "@aihot/industry/site";
-import { FEATURES } from "@aihot/industry/features";
 import { CATEGORY_KEYS, DOMAIN_KEYS, DOMAIN_LABELS, ENABLED_DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
 import { ENABLED_REPORT_SCOPES, REPORT_SCOPES, type ReportKind, type ReportScope } from "@aihot/contracts/site";
 import { reportPath, reportArchivePath } from "@aihot/contracts/http-policy";
@@ -10,11 +9,8 @@ import { MCP_TOOLS } from "@aihot/contracts/mcp";
 
 /** Discovery only needs the scopes that have real reports, not the size of their histories. */
 export async function loadLlmsAvailability() {
-  const [reports, [row]] = await Promise.all([
-    sql<{ kind: ReportKind; scope: ReportScope }[]>`SELECT DISTINCT kind, scope FROM reports`,
-    sql<{ hasLeaderboard: boolean }[]>`SELECT EXISTS (SELECT 1 FROM lb_runs WHERE status = 'published') AS "hasLeaderboard"`,
-  ]);
-  return { reports, hasLeaderboard: row!.hasLeaderboard };
+  const reports = await sql<{ kind: ReportKind; scope: ReportScope }[]>`SELECT DISTINCT kind, scope FROM reports`;
+  return { reports };
 }
 
 export const PUBLIC_VERSIONS = {
@@ -22,7 +18,7 @@ export const PUBLIC_VERSIONS = {
   v1OpenApi: "2.0.0",
 };
 
-export function llmsTxt(opts: { reports: ReadonlyArray<{ kind: ReportKind; scope: ReportScope }>; hasLeaderboard: boolean }): string {
+export function llmsTxt(opts: { reports: ReadonlyArray<{ kind: ReportKind; scope: ReportScope }> }): string {
   const u = siteUrl;
   const kinds: ReportKind[] = ["daily", "weekly", "monthly"];
   const names = { daily: "日报", weekly: "周报", monthly: "月报" };
@@ -64,10 +60,6 @@ export function llmsTxt(opts: { reports: ReadonlyArray<{ kind: ReportKind; scope
     if (available("daily", scope)) lines.push(`- [${title("daily", scope)}存档](${u(reportArchivePath(scope))}): 历史报告归档`);
   }
   lines.push(`- [主题](${u("/topics")}): 按机构与主体、专业方向、内容形态聚合，支持领域筛选`);
-  if (FEATURES.leaderboard && opts.hasLeaderboard) {
-    lines.push(`- [模型榜](${u("/leaderboard")}): 汇总多家公开模型评测榜单的共识排名`);
-    lines.push(`- [模型榜算法规则](${u("/leaderboard/rules")}): 模型身份统一、共同参评比较、缺失评测处理和共识指数计算方式`);
-  }
   lines.push("", "## 使用说明", "");
   lines.push(`- 资讯、热点、事件、RSS、日报与五个 MCP 工具的 domain 支持 ${DOMAIN_KEYS.join(" / ")}；省略即概览，领域与内容类别独立。`);
   lines.push("- 内容为第三方原文的聚合摘要与编辑策展，原文版权归各来源所有；重要事实请回原文核对。");

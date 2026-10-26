@@ -143,18 +143,6 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
     }
   }
 
-  // A leaderboard source keeps its last snapshot while failing.
-  const [lb] = await sql<{ value: { sources?: Record<string, { ok: boolean; lastOkAt: string | null; error?: string }> } }[]>`SELECT value FROM settings WHERE key = 'leaderboard.fetch'`;
-  const stale = Object.entries(lb?.value.sources ?? {}).filter(([, s]) => !s.ok && s.lastOkAt && now - Date.parse(s.lastOkAt) > 26 * 3600_000);
-  if (stale.length) {
-    out.push({
-      key: "leaderboard.fetch",
-      level: "digest",
-      title: `模型榜有 ${stale.length} 个评测来源超过一天没抓到，榜单暂用上一份数据`,
-      detail: stale.slice(0, 6).map(([k, s]) => `${k}：${s.error ?? "失败"}（上次成功 ${beijingStamp(s.lastOkAt!)}）`).join("；"),
-    });
-  }
-
   return out;
 }
 

@@ -57,17 +57,6 @@ export function feedColumns(scope: DomainKey | null): readonly FeedColumn[] {
   return scope === null ? DEFAULT_COLUMNS : DOMAINS.find((domain) => domain.key === scope)!.columns;
 }
 
-export const LEADERBOARD_PUBLIC_BOARDS = ["overall", "coding", "reasoning", "knowledge", "professional"] as const;
-export type LeaderboardBoardKey = (typeof LEADERBOARD_PUBLIC_BOARDS)[number];
-
-export const LEADERBOARD_BOARD_LABELS: Record<LeaderboardBoardKey, string> = {
-  overall: "综合",
-  coding: "编程",
-  reasoning: "推理",
-  knowledge: "知识",
-  professional: "专业办公",
-};
-
 /** Article ids. Also the local-data import validation pattern. */
 export const ARTICLE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
 

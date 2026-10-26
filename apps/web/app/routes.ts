@@ -30,14 +30,6 @@ export default [
   route("more", "routes/more.tsx"),
   route("starred", "routes/starred.tsx"),
   route("agent", "routes/agent.tsx"),
-  layout("routes/leaderboard-boards.tsx", [
-    route("leaderboard", "routes/leaderboard.tsx", { id: "leaderboard" }),
-    route("leaderboard/category/:key", "routes/leaderboard.tsx", { id: "leaderboard-category" }),
-  ]),
-  route("leaderboard/sources", "routes/leaderboard-sources.tsx"),
-  route("leaderboard/sources/:key", "routes/leaderboard-source.tsx"),
-  route("leaderboard/rules", "routes/leaderboard-rules.tsx"),
-  route("leaderboard/:slug", "routes/leaderboard-model.tsx"),
   route("admin/login", "routes/admin-login.tsx"),
   layout("routes/admin/layout.tsx", { id: "admin-layout" }, [
     route("admin", "routes/admin/index.tsx"),

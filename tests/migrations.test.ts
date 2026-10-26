@@ -123,3 +123,36 @@ test("0004 accepts configured domain identities without rewriting historical row
     await tx.unsafe(`DROP SCHEMA "${schema}" CASCADE`);
   });
 });
+
+test("0006 removes leaderboard data and settings while preserving shared state", async () => {
+  const migrations = await Promise.all(["0001_core.sql", "0006_remove_leaderboard.sql"].map((file) =>
+    readFile(new URL(`../database/migrations/${file}`, import.meta.url), "utf8"),
+  ));
+  const schema = `test_migration_leaderboard_${T}`;
+  const activeAlert = { title: "Collection stopped", level: "now", since: "2026-10-01T00:00:00Z", sentAt: "2026-10-01T01:00:00Z" };
+  await sql.begin(async (tx) => {
+    await tx.unsafe(`CREATE SCHEMA "${schema}"`);
+    await tx.unsafe(`SET LOCAL search_path = "${schema}", public`);
+    await tx.unsafe(migrations[0]!);
+    await tx`INSERT INTO lb_models (id, slug, name) VALUES ('model', 'model', 'Model')`;
+    await tx`INSERT INTO lb_aliases (id, source_key, alias, normalized_alias, model_id) VALUES ('alias', 'arena', 'Model', 'model', 'model')`;
+    await tx`INSERT INTO lb_snapshots (id, source_key, source_name, fetched_at) VALUES ('snapshot', 'arena', 'Arena', now())`;
+    await tx`INSERT INTO lb_scores (id, snapshot_id, model_id, configuration_key, metric_key) VALUES ('score', 'snapshot', 'model', 'default', 'elo')`;
+    await tx`INSERT INTO lb_runs (id, methodology_version, generated_at) VALUES ('run', 'v15', now())`;
+    await tx`INSERT INTO lb_rankings (run_id, board, model_id, rank) VALUES ('run', 'overall', 'model', 1)`;
+    await tx`INSERT INTO lb_prices (model_id, kind, currency) VALUES ('model', 'official', 'USD')`;
+    await tx`INSERT INTO fx_rates (as_of, pair, rate, source_name) VALUES ('2026-10-01', 'USD/CNY', 7.1, 'ECB')`;
+    await tx`INSERT INTO settings (key, value) VALUES ('leaderboard.fetch', '{"sources":{}}'), ('leaderboard.last_check', '{"fingerprint":"f"}'), ('models.score', '{"model":"default"}')`;
+    await tx`INSERT INTO settings (key, value) VALUES ('alerts.state', ${tx.json({ "leaderboard.fetch": activeAlert, "content.collect": activeAlert })})`;
+    await tx.unsafe(migrations[1]!);
+    const tables = await tx<{ tablename: string }[]>`
+      SELECT tablename FROM pg_tables WHERE schemaname = ${schema} AND (tablename LIKE 'lb\_%' OR tablename = 'fx_rates')`;
+    assert.equal(tables.length, 0);
+    const settings = await tx<{ key: string; value: unknown }[]>`SELECT key, value FROM settings ORDER BY key`;
+    assert.deepEqual([...settings], [
+      { key: "alerts.state", value: { "content.collect": activeAlert } },
+      { key: "models.score", value: { model: "default" } },
+    ]);
+    await tx.unsafe(`DROP SCHEMA "${schema}" CASCADE`);
+  });
+});

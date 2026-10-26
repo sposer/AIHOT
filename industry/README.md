@@ -12,7 +12,6 @@
 | [`sources.json`](sources.json) | 首次导入的信源及其配置；列表和 URL 只维护在此文件 |
 | `prompts/` | 每一步的提示词：预筛、评分、写作、结构化、归组、综述、日报、翻译 |
 | `selection.ts` | 入选门槛 |
-| `features.ts` | 模型榜的开关 |
 | `brand/` | 图标、Logo、日报周报月报的报头字 |
 | `pages/` | 使用规则、隐私说明（模板，上线前按实际情况改写） |
 | `changelog.json` | 更新日志 |

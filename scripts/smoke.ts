@@ -2,7 +2,6 @@
 // deploy, and CI's check of the built site on an empty database.
 //   node scripts/smoke.ts [--base http://localhost:3000]
 import { SITE } from "@aihot/industry/site";
-import { FEATURES } from "@aihot/industry/features";
 import { DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
 import { REPORT_SCOPES, type ReportKind } from "@aihot/contracts/site";
 import { reportArchivePath, reportPath } from "@aihot/contracts/http-policy";
@@ -36,20 +35,11 @@ for (const domain of DOMAIN_KEYS) {
   for (const path of ["/api/v1/items", "/api/v1/hot-topics"]) MACHINE.push([`${path}?domain=${domain}`, /json/]);
   for (const path of ["/feed.xml", "/feed/all.xml", "/feed/daily.xml"]) MACHINE.push([`${path}?domain=${domain}`, /xml/]);
 }
-// The leaderboard pages answer 503 until the first round is published (a fresh site computes it when
-// the worker starts; with collection off there is nothing to compute).
-const LEADERBOARD = FEATURES.leaderboard ? ["/leaderboard", "/leaderboard/rules", "/leaderboard/sources"] : [];
-PAGES.push(...LEADERBOARD);
-
 let failed = 0;
 async function check(path: string, expect: (res: Response, body: string) => string | null) {
   try {
     const res = await fetch(base + path, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
     const body = res.headers.get("content-type")?.startsWith("image/") ? "" : await res.text();
-    if (res.status === 503 && LEADERBOARD.includes(path)) {
-      console.log(`– ${path}  no leaderboard round published yet`);
-      return;
-    }
     const problem = res.status !== 200 ? `HTTP ${res.status}` : expect(res, body);
     console.log(`${problem ? "✗" : "✓"} ${path}${problem ? `  ${problem}` : ""}`);
     if (problem) failed += 1;

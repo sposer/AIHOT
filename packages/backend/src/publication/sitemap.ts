@@ -1,8 +1,7 @@
 // Sitemap from the same public metadata as pages: reports, topics and their pages,
-// the latest 500 stories, leaderboard pages and indexable items. Cached ~5 minutes and rebuilt in the
+// the latest 500 stories and indexable items. Cached ~5 minutes and rebuilt in the
 // background after that (crawlers get the previous copy meanwhile); if the database fails, the last
 // successful sitemap is served (never an empty one). Bounded.
-import { FEATURES } from "@aihot/industry/features";
 import { ENABLED_REPORT_SCOPES, type ReportKind, type ReportScope } from "@aihot/contracts/site";
 import { ENABLED_DOMAIN_KEYS } from "@aihot/contracts/taxonomy";
 import { reportPath, reportArchivePath } from "@aihot/contracts/http-policy";
@@ -13,13 +12,7 @@ import { sql } from "../db.ts";
 import { cached } from "../lib/cache.ts";
 import { escapeXml } from "../lib/text.ts";
 import { siteUrl } from "./links.ts";
-import { leaderboardUrls } from "../leaderboard/read.ts";
 import { topicPageCounts } from "./topics.ts";
-
-async function leaderboardDetailUrls(): Promise<string[]> {
-  const fixed = new Set(["/leaderboard", "/leaderboard/sources", "/leaderboard/rules"]);
-  return (await leaderboardUrls()).filter((u) => !fixed.has(u) && !u.startsWith("/leaderboard/category/"));
-}
 
 const MAX_URLS = 45_000;
 const TTL_MS = 5 * 60 * 1000;
@@ -58,14 +51,6 @@ async function build(): Promise<string> {
     }
     entries.push({ loc: reportArchivePath(scope), lastmod: lastReport("daily", scope), changefreq: "daily", priority: 0.7 });
   }
-  if (FEATURES.leaderboard) {
-    entries.push(
-      { loc: "/leaderboard", changefreq: "daily", priority: 0.8 },
-      { loc: "/leaderboard/sources", changefreq: "weekly", priority: 0.5 },
-      { loc: "/leaderboard/rules", changefreq: "monthly", priority: 0.4 },
-    );
-    for (const board of ["coding", "reasoning", "knowledge", "professional"]) entries.push({ loc: `/leaderboard/category/${board}`, changefreq: "daily", priority: 0.6 });
-  }
   const reports = await sql<{ kind: ReportKind; scope: ReportScope; key: string; generated_at: Date }[]>`SELECT kind, scope, key, generated_at FROM reports ORDER BY kind, scope, key DESC`;
   for (const r of reports) entries.push({ loc: reportPath(r.kind, r.scope, r.key), lastmod: r.generated_at, changefreq: r.kind === "daily" ? "never" : "monthly", priority: r.kind === "daily" ? 0.6 : 0.6 });
   for (const t of await topicPageCounts()) {
@@ -81,8 +66,6 @@ async function build(): Promise<string> {
       WHERE f.story_id = stories.id AND fa.role IN ('primary', 'report') AND p.visibility = 'public' AND p.eligible)
     ORDER BY latest_at DESC NULLS LAST LIMIT 500`;
   for (const s of stories) entries.push({ loc: `/story/${s.public_id}`, lastmod: s.latest_at, changefreq: "daily", priority: 0.5 });
-  // Model pages exist only for models on a public top-30 board; source pages for every registered source.
-  if (FEATURES.leaderboard) for (const loc of await leaderboardDetailUrls()) entries.push({ loc, changefreq: "weekly", priority: 0.4 });
   const items = await sql<{ id: string; t: Date }[]>`
     SELECT article_id AS id, updated_at AS t FROM publications WHERE visibility = 'public' AND indexable ORDER BY timeline_at DESC LIMIT ${MAX_URLS - entries.length}`;
   for (const it of items) entries.push({ loc: `/items/${it.id}`, lastmod: it.t, changefreq: "monthly", priority: 0.5 });

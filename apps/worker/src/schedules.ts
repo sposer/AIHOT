@@ -1,6 +1,5 @@
 // Cron-style schedules (Asia/Shanghai). Each run is recorded in job_runs; missed slots run once.
 import type { PgBoss } from "pg-boss";
-import { FEATURES } from "@aihot/industry/features";
 import { ensureQueue, recordRun } from "@aihot/backend/jobs/queue";
 import { sweepUnprocessed } from "@aihot/backend/jobs/content";
 import { translatePending } from "@aihot/backend/editorial/translate";
@@ -13,8 +12,6 @@ import { linkRelatedStories } from "@aihot/backend/events/group";
 import { catchUpReports, composeDaily, composeMonthly, composeWeekly } from "@aihot/backend/reports/compose";
 import { ENABLED_REPORT_SCOPES } from "@aihot/contracts/site";
 import { addDays, beijingDate, isoWeekLabel } from "@aihot/contracts/time";
-import { runLeaderboardRound } from "@aihot/backend/leaderboard/method/run";
-import { refreshLeaderboard } from "@aihot/backend/leaderboard/fetch/refresh";
 import { dailyRetention } from "@aihot/backend/operations/retention";
 import { submitIndexNow } from "@aihot/backend/operations/indexnow";
 import { checkAlerts, sendDigest } from "@aihot/backend/operations/alerts";
@@ -74,11 +71,6 @@ export const SCHEDULES: Scheduled[] = [
   { name: "feedback.forward", cron: "*/10 * * * *", run: () => forwardPendingFeedback() },
   ...(backupConfigured() ? [{ name: "ops.backup", cron: "10 4 * * *", missed: "once" as const, run: () => runBackup() }] : []),
   { name: "reports.source-health", cron: "0 9 * * 1", missed: "once", run: () => sourceHealthWeekly() },
-  // Four upstream checks a day; a new run is published only when the evidence changed. With collection
-  // off only the computation runs, over the snapshots already stored.
-  ...(FEATURES.leaderboard
-    ? [{ name: "leaderboard.round", cron: "5 2,8,14,20 * * *", missed: "once" as const, run: () => (collecting ? refreshLeaderboard() : runLeaderboardRound()) }]
-    : []),
   ...(collecting
     ? [
         { name: "sources.schedule", cron: "* * * * *", run: () => scheduleDueSources() },

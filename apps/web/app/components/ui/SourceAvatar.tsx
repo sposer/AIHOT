@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { sourceInitial } from "../../lib/format";
 
-/** Round avatar for X accounts (or a source icon); a tinted initial when there is no image. */
+/** Round avatar for X accounts (or a source icon); a grey initial when there is no image. */
 export function SourceAvatar({ name, iconUrl, avatarUrl, iconSrcSet, avatarSrcSet, size = 18 }: { name: string; iconUrl?: string | null; avatarUrl?: string | null; iconSrcSet?: string; avatarSrcSet?: string; size?: number }) {
   const [failed, setFailed] = useState(false);
   const src = avatarUrl ?? iconUrl;
@@ -23,12 +23,12 @@ export function SourceAvatar({ name, iconUrl, avatarUrl, iconSrcSet, avatarSrcSe
     );
   }
   let h = 0;
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 5;
   return (
     <span
       aria-hidden="true"
       className="inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white"
-      style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.5)), background: `oklch(0.6 0.07 ${h})` }}
+      style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.5)), background: `oklch(${0.38 + h * 0.05} 0 0)` }}
     >
       {sourceInitial(name)}
     </span>

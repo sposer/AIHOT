@@ -162,11 +162,11 @@ function readColors(probe: CanvasRenderingContext2D): Colors {
     const d = probe.getImageData(0, 0, 1, 1).data;
     return [d[0]!, d[1]!, d[2]!];
   };
-  const bg = parse(getComputedStyle(document.body).backgroundColor, [250, 249, 246]);
+  const bg = parse(getComputedStyle(document.body).backgroundColor, [247, 247, 247]);
   return {
-    ink: parse(root.getPropertyValue("--ink").trim(), [32, 42, 48]),
-    accent: parse(root.getPropertyValue("--accent").trim(), [23, 107, 117]),
-    line: parse(root.getPropertyValue("--line-strong").trim(), [200, 205, 205]),
+    ink: parse(root.getPropertyValue("--ink").trim(), [22, 22, 22]),
+    accent: parse(root.getPropertyValue("--accent").trim(), [17, 17, 17]),
+    line: parse(root.getPropertyValue("--line-strong").trim(), [212, 212, 212]),
     surface: parse(root.getPropertyValue("--surface").trim(), [255, 255, 255]),
     bg,
     dark: bg[0] * 0.3 + bg[1] * 0.59 + bg[2] * 0.11 < 110,

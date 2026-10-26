@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   AIHOT design tokens — the look of the original site: warm off-white paper,
-   ink text, one teal accent (cyan in dark), hairline borders, no gradients.
-   Components use the semantic names below; values change per theme only.
+   Design tokens — black and white: neutral grey paper, ink text, an ink accent
+   (white in dark), hairline borders, no gradients. Components use the semantic
+   names below; values change per theme only.
+   decision: keep hot, ok and amber as the only chromatic tokens; not grey them
+   because errors, health and warnings would then differ only by wording.
    --------------------------------------------------------------------------- */
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -11,14 +13,6 @@
 @theme {
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-
-  /* Brand (VI), fixed across themes. */
-  --color-brand-teal: #176b75;
-  --color-brand-cyan-0: #5deef0;
-  --color-brand-cyan-20: #2ce2e8;
-  --color-brand-cyan-54: #12ccd8;
-  --color-brand-cyan-82: #08abc2;
-  --color-brand-cyan-100: #078ea9;
 
   /* Semantic colours. */
   --color-bg: var(--bg);
@@ -85,28 +79,28 @@
   --page-max-wide: max(1200px, calc(270dvh - 236px));
   --page-max-reading: max(1100px, calc(200dvh - 236px));
   color-scheme: light;
-  --bg: #faf9f6;
-  --bg-sunk: #f3f3ef;
-  --bg-muted: #e9ede9;
+  --bg: #f7f7f7;
+  --bg-sunk: #f1f1f1;
+  --bg-muted: #e8e8e8;
   --surface: #ffffff;
-  --surface-2: #fdfdfb;
+  --surface-2: #fcfcfc;
   --raised: #ffffff;
-  --sidebar: #fdfdfb;
-  --daybar: #f0f2ee;
-  --field: #eef1ed;
-  --ink: #202a30;
-  --ink-2: #303c42;
-  --ink-3: #59656b;
-  --ink-4: #657176;
-  --line: #dfe4e1;
-  --line-strong: #d1d9d5;
-  --line-soft: #e9ede9;
-  --accent: #176b75;
-  --accent-ink: #145f68;
-  --accent-soft: rgba(23, 107, 117, 0.08);
-  --accent-softer: rgba(23, 107, 117, 0.05);
+  --sidebar: #fcfcfc;
+  --daybar: #efefef;
+  --field: #eeeeee;
+  --ink: #161616;
+  --ink-2: #2e2e2e;
+  --ink-3: #5a5a5a;
+  --ink-4: #686868;
+  --line: #e2e2e2;
+  --line-strong: #d4d4d4;
+  --line-soft: #ebebeb;
+  --accent: #111111;
+  --accent-ink: #000000;
+  --accent-soft: rgba(0, 0, 0, 0.06);
+  --accent-softer: rgba(0, 0, 0, 0.035);
   --accent-contrast: #ffffff;
-  --note: #526f72;
+  --note: #555555;
   --hot: #b3402a;
   --hot-soft: rgba(179, 64, 42, 0.08);
   --amber: #b8873a;
@@ -116,44 +110,44 @@
   --ok-soft: rgba(47, 125, 92, 0.1);
   --ok-ink: #2a6e51;
   --panel-quiet: color-mix(in srgb, var(--bg) 48%, var(--surface));
-  --rank-1: #b3402a;
-  --rank-2: #a3642f;
-  --rank-3: #96702e;
-  --rank-rest: #6b7684;
-  --shadow-card: 0 1px 2px rgba(32, 42, 48, 0.025);
-  --shadow-card-hover: 0 3px 12px rgba(32, 42, 48, 0.055);
-  --shadow-soft: 0 4px 12px rgba(28, 39, 51, 0.06);
-  --shadow-thumb: 0 1px 2px rgba(28, 39, 51, 0.1), 0 1px 1px rgba(28, 39, 51, 0.04);
-  --shadow-pop: 0 12px 32px rgba(28, 39, 51, 0.12);
-  --prose-ink: #26323a;
-  --code-bg: #f6f7f4;
-  --selection: rgba(23, 107, 117, 0.16);
+  --rank-1: #111111;
+  --rank-2: #3d3d3d;
+  --rank-3: #5c5c5c;
+  --rank-rest: #858585;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-card-hover: 0 3px 12px rgba(0, 0, 0, 0.06);
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.12);
+  --prose-ink: #222222;
+  --code-bg: #f5f5f5;
+  --selection: rgba(0, 0, 0, 0.12);
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #13191c;
-  --bg-sunk: #182024;
-  --bg-muted: #202a2f;
-  --surface: #1a2226;
-  --surface-2: #1d272b;
-  --raised: #202a2f;
-  --sidebar: #161e21;
-  --daybar: #182024;
+  --bg: #111111;
+  --bg-sunk: #161616;
+  --bg-muted: #222222;
+  --surface: #1a1a1a;
+  --surface-2: #1d1d1d;
+  --raised: #222222;
+  --sidebar: #141414;
+  --daybar: #161616;
   --field: rgba(255, 255, 255, 0.06);
-  --ink: #e7eceb;
-  --ink-2: #d2dada;
-  --ink-3: #a5b0b3;
-  --ink-4: #89979d;
+  --ink: #ededed;
+  --ink-2: #d4d4d4;
+  --ink-3: #a8a8a8;
+  --ink-4: #8f8f8f;
   --line: rgba(255, 255, 255, 0.08);
   --line-strong: rgba(255, 255, 255, 0.12);
   --line-soft: rgba(255, 255, 255, 0.06);
-  --accent: #12ccd8;
-  --accent-ink: #2ce2e8;
-  --accent-soft: rgba(18, 204, 216, 0.12);
-  --accent-softer: rgba(18, 204, 216, 0.06);
+  --accent: #f2f2f2;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.1);
+  --accent-softer: rgba(255, 255, 255, 0.05);
   --accent-contrast: #000000;
-  --note: #8fb8a8;
+  --note: #a0a0a0;
   --hot: #d86a52;
   --hot-soft: rgba(216, 106, 82, 0.12);
   --amber: #d3b26a;
@@ -162,18 +156,18 @@
   --ok: #5fc79a;
   --ok-soft: rgba(95, 199, 154, 0.12);
   --ok-ink: #7fd1ad;
-  --rank-1: #d86a52;
-  --rank-2: #d18a5e;
-  --rank-3: #d3b26a;
-  --rank-rest: #7b869a;
+  --rank-1: #f2f2f2;
+  --rank-2: #c8c8c8;
+  --rank-3: #a8a8a8;
+  --rank-rest: #858585;
   --shadow-card: none;
   --shadow-card-hover: none;
   --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.35);
   --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.45);
-  --prose-ink: #d7dfdf;
-  --code-bg: #10151c;
-  --selection: rgba(18, 204, 216, 0.22);
+  --prose-ink: #dadada;
+  --code-bg: #0d0d0d;
+  --selection: rgba(255, 255, 255, 0.2);
 }
 
 @layer base {

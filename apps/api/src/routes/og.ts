@@ -132,7 +132,7 @@ export function registerOg(app: FastifyInstance) {
       title: s.title,
       subtitle: s.latest ?? s.digest,
       meta: `${s.sourceCount} 个来源 · ${s.reportCount} 篇报道`,
-      accent: s.whyHot.rank ? "hot" : "teal",
+      accent: s.whyHot.rank ? "hot" : "ink",
     }, 3600);
   });
 }

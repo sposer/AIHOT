@@ -6,10 +6,10 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-176b75?style=flat-square" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/Node.js-26-176b75?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 26">
-  <img src="https://img.shields.io/badge/PostgreSQL-18-176b75?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL 18">
-  <img src="https://img.shields.io/badge/Docker-Compose-176b75?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/Node.js-26-111111?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 26">
+  <img src="https://img.shields.io/badge/PostgreSQL-18-111111?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL 18">
+  <img src="https://img.shields.io/badge/Docker-Compose-111111?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose">
   <a href="https://aihot.news"><img src="https://img.shields.io/badge/demo-aihot.news-202a30?style=flat-square" alt="aihot.news"></a>
 </p>
 

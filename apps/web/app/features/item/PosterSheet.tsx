@@ -39,7 +39,7 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
   return (
     <Presence show={open} enter="anim-fade-in" exit="anim-fade-out" duration={220}>
       <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-        <button type="button" aria-label="关闭" className="absolute inset-0 bg-[rgba(8,14,15,0.55)] backdrop-blur-[3px]" onClick={onClose} />
+        <button type="button" aria-label="关闭" className="absolute inset-0 bg-[rgba(0,0,0,0.55)] backdrop-blur-[3px]" onClick={onClose} />
         <div
           role="dialog"
           aria-modal="true"
